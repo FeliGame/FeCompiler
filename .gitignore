@@ -1,4 +1,6 @@
 *.fe
 *.koopa
+*.riscv
+src/koopa.h
 .vscode
 build

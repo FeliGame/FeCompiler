@@ -62,12 +62,6 @@ INC_FLAGS := $(addprefix -I, $(INC_DIRS))
 DEPS := $(OBJS:.o=.d)
 CPPFLAGS = $(INC_FLAGS) -MMD -MP
 
-
-compile: $(BUILD_DIR)/$(TARGET_EXEC)
-	$(BUILD_DIR)/$(TARGET_EXEC) -koopa *.fe -o hello.koopa
-
-
-
 # Main target
 $(BUILD_DIR)/$(TARGET_EXEC): $(FB_SRCS) $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -lpthread -ldl -o $@
@@ -99,8 +93,20 @@ $(BUILD_DIR)/%.tab$(FB_EXT): $(SRC_DIR)/%.y
 	mkdir -p $(dir $@)
 	$(BISON) $(BFLAGS) -o $@ $<
 
+koopa: $(BUILD_DIR)/$(TARGET_EXEC)
+	$(BUILD_DIR)/$(TARGET_EXEC) -$@ *.fe -o hello.$@
 
-.PHONY: clean
+riscv: $(BUILD_DIR)/$(TARGET_EXEC)
+	$(BUILD_DIR)/$(TARGET_EXEC) -$@ *.fe -o hello.$@
+
+
+.PHONY: clean test1 test2
+
+test1:
+	autotest -koopa -s lv1 /root/compiler/FeCompiler
+
+test2:
+	autotest -riscv -s lv1 /root/compiler/FeCompiler
 
 clean:
 	-rm -rf $(BUILD_DIR)

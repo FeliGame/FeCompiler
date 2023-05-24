@@ -12,7 +12,7 @@ class BaseAST
 {
 public:
     virtual ~BaseAST() = default;
-
+    // Dump translates the AST into Koopa IR string
     virtual string Dump() const = 0;
 };
 
@@ -84,4 +84,4 @@ public:
 };
 // ...
 
-#endif
+#endif  // AST_HPP
