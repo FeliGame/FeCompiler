@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include "ast.hpp"
@@ -34,7 +35,18 @@ int main(int argc, const char *argv[])
     assert(!ret);
 
     // 输出解析得到的 AST, 其实就是个字符串
-    ast->Dump();
-    cout << endl;
+    string ir = ast->Dump();
+    cout << ir << endl;
+
+    // 输出到文件
+    fstream fout;
+    fout.open(output, ios_base::out);
+    if(!fout.is_open()) {
+        cerr << "Failed to open " << output << endl;
+    } else {
+        fout << ir << endl;
+    }
+    fout.clear();
+
     return 0;
 }

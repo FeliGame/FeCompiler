@@ -141,7 +141,7 @@ Block
 Stmt
   : RETURN Number ';' {
     auto ast = new StmtAST();
-    ast->statement = "return " + to_string($2) + ";";
+    ast->statement = to_string($2);
     $$ = ast;
     // auto number = unique_ptr<string>($2);
     // $$ = new string("return " + *number + ";");

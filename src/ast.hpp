@@ -13,74 +13,73 @@ class BaseAST
 public:
     virtual ~BaseAST() = default;
 
-    virtual void Dump() const = 0;
+    virtual string Dump() const = 0;
 };
 
-// CompUnit 是 BaseAST
 class CompUnitAST : public BaseAST
 {
 public:
     // 用智能指针管理对象
-    std::unique_ptr<BaseAST> func_def;
+    unique_ptr<BaseAST> func_def;
 
-    void Dump() const override
+    string Dump() const override
     {
-        std::cout << "CompUnitAST { \n";
-        func_def->Dump();
-        std::cout << " }";
+        // cout << "CompUnitAST { \n";
+        string s = func_def->Dump();
+        // cout << " }";
+        return s;
     }
 };
 
-// FuncDef 也是 BaseAST
 class FuncDefAST : public BaseAST
 {
 public:
-    std::unique_ptr<BaseAST> func_type; // 返回值类型
-    std::string ident;                  // 函数名
-    std::unique_ptr<BaseAST> block;     // 函数体
+    unique_ptr<BaseAST> func_type; // 返回值类型
+    string ident;                  // 函数名
+    unique_ptr<BaseAST> block;     // 函数体
 
-    void Dump() const override
+    string Dump() const override
     {
-        std::cout << "FuncDefAST { \n";
-        func_type->Dump();
-        std::cout << ", " << ident << ", ";
-        block->Dump();
-        std::cout << " }";
+        string s = "fun @" + ident + "(): " + func_type->Dump() + " {\n%entry:\n\t" + block->Dump() + "\n}";
+        return s;
     }
 };
 
 class FuncTypeAST : public BaseAST
 {
 public:
-    std::string type;
+    string type;
 
-    void Dump() const override
+    string Dump() const override
     {
-        std::cout << "FuncTypeAST { \n"
-                  << type << " }";
+        string s = "\0";
+        if (type == "int")
+            s = "i32";
+        return s;
     }
 };
 
 class BlockAST : public BaseAST
 {
 public:
-    std::unique_ptr<BaseAST> stmt; // 单行返回语句
-    void Dump() const override
+    unique_ptr<BaseAST> stmt; // 单行返回语句
+    string Dump() const override
     {
-        std::cout << "BlockAST { \n";
-        stmt->Dump();
-        std::cout << " }";
+        // cout << "BlockAST { \n";
+        string s = stmt->Dump();
+        // cout << " }";
+        return s;
     }
 };
 
 class StmtAST : public BaseAST
 {
 public:
-    std::string statement; // 单行返回语句
-    void Dump() const override
+    string statement; // 单行返回语句
+    string Dump() const override
     {
-        std::cout << "BlockAST { \n"
-                  << statement << " }\n";
+        string s = "ret " + statement;
+        return s;
     }
 };
 // ...
