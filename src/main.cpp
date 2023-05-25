@@ -47,7 +47,7 @@ string GenerateKoopaIR()
     return koopa_str;
 }
 
-void GenerateRISCV(string koopaIR) {
+void GenerateRISCVFile(string koopaIR) {
     cout << "Generating RISCV(raw program) ...\n";
 
     // 将KoopaIR字符串解析为KoopaIR程序
@@ -92,7 +92,7 @@ int main(int argc, const char *argv[])
     string ir = GenerateKoopaIR();
     if(!strcmp(mode, "-koopa")) writeToFile(ir);
 
-    else if(!strcmp(mode, "-riscv")) GenerateRISCV(ir);
+    else if(!strcmp(mode, "-riscv")) GenerateRISCVFile(ir);
     // writeToFile(riscv);
 
 

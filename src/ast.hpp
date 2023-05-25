@@ -98,7 +98,9 @@ public:
         // %1 = sub 0, %0
         // %2 = sub 0, %1
         // ret %2
-        string s = exp->Dump() + "ret " + exp->Get_ref_if_possible() + "\n"; // 指令行
+        string s = exp->Dump();
+        s = s + "ret " + exp->Get_ref_if_possible() + "\n"; // 指令行
+        cerr << "debug: " << exp->t_id << " " << exp->t_val << endl;
         return s;
     }
 };
@@ -139,10 +141,10 @@ public:
         case 1:
             // 6. (- -!6) ，没有计算指令
             // 值不发生改变，因此原样复制
+            s = exp->Dump();
             t_id = exp->t_id;
             t_val = exp->t_val;
             t_type = exp->t_type;
-            s = exp->Dump();
             break;
         case 2:
             // 1.该式子规约6为Number，没有计算指令，且单个变量/常量无需输出值
@@ -194,17 +196,22 @@ public:
                 uint32_t unaryExp_val = atoi(unaryExp->t_val.data()); // 获取子表达式的值，并转换为整型
                 t_id = unaryExp->t_id + 1;                            // 分配新临时变量
                 s = s + Get_ref() + " = eq " + unaryExp->Get_ref_if_possible() + ", " + to_string(!unaryExp_val) + "\n";
+                t_val = to_string(!unaryExp_val);
             }
             else if (unaryOp == "-")
             {
                 s = unaryExp->Dump();
                 t_id = unaryExp->t_id + 1; // 分配新临时变量
                 s = s + Get_ref() + " = sub 0, " + unaryExp->Get_ref_if_possible() + "\n";
+                t_val = to_string(-atoi(unaryExp->t_val.data()));
             }
             else if (unaryOp == "+")    // 不产生新指令，照搬之前的指令
             {
                 s = unaryExp->Dump();
+                t_id = unaryExp->t_id;
+                t_val = unaryExp->t_val;
             }
+            t_type = unaryExp->t_type;
             break;
         default:
             cerr << "Parsing Error in: UnaryExp:=PrimaryExp|UnaryOp UnaryExp\n";

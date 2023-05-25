@@ -104,10 +104,22 @@ void Visit(const koopa_raw_value_t &value)
         // 访问 integer 指令
         Visit(kind.data.integer);
         break;
+    case KOOPA_RVT_ALLOC:
+        // 访问局部存储分配
+        Visit(kind.data.store);
+        break;
+    
     default:
         // 其他类型暂时遇不到
         assert(false);
     }
+}
+
+void Visit(const koopa_raw_store_t &store) {
+    Visit(store.dest); 
+    fout << " ";
+    Visit(store.value);
+    fout << " \n";
 }
 
 void Visit(const koopa_raw_value_kind_t &kind) 

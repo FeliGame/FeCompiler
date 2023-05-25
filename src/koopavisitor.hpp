@@ -16,5 +16,7 @@ void Visit(const koopa_raw_value_kind_t &kind);
 void Visit(const koopa_raw_return_t&);
 void Visit(const koopa_raw_integer_t&);
 
+void Visit(const koopa_raw_store_t&);
+
 
 #endif // KOOPA_VISITOR_HPP
