@@ -193,10 +193,9 @@ public:
             if (unaryOp == "!")
             {
                 s = unaryExp->Dump();   // 先计算子表达式的值
-                uint32_t unaryExp_val = atoi(unaryExp->t_val.data()); // 获取子表达式的值，并转换为整型
                 t_id = unaryExp->t_id + 1;                            // 分配新临时变量
-                s = s + Get_ref() + " = eq " + unaryExp->Get_ref_if_possible() + ", " + to_string(!unaryExp_val) + "\n";
-                t_val = to_string(!unaryExp_val);
+                s = s + Get_ref() + " = eq " + unaryExp->Get_ref_if_possible() + ", 0\n";
+                t_val = to_string(!atoi(unaryExp->t_val.data()));
             }
             else if (unaryOp == "-")
             {
