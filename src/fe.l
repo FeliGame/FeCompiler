@@ -32,8 +32,11 @@ LineComment   "//".*
 /* BlockComment added, it should be shortest match*/
 BlockComment    "/*"[^(*/)]*"*/"
 
-/* 标识符（字母开头） */
+/* 标识符（字母或下划线开头） */
 Identifier    [a-zA-Z_][a-zA-Z0-9_]*
+
+/* 算符 */
+/* UnaryOperator      ["+""-""*""/""=""&""|""^""!""~"] */
 
 /* 整数字面量 */
 Decimal       [1-9][0-9]*

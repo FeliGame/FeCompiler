@@ -19,6 +19,8 @@ imports：此时代码段code_seg只能是JAVA
 #include <memory>
 #include <string>
 #include "ast.hpp"
+#include <cstdio>
+#include <cstring>
 
 // 声明 lexer 函数和错误处理函数
 // C++11 unique_ptr: one ptr only reflects on one r-val; it destructs automatically.
@@ -54,6 +56,7 @@ using namespace std;
 // str_val or int_val is the leaf node of ast
 %union {
   std::string *str_val;
+  // std::string *op_val;
   int int_val;
   BaseAST *ast_val;
 }
@@ -65,15 +68,15 @@ using namespace std;
 %token INT RETURN
 %token <str_val> IDENT
 %token <int_val> INT_CONST
+// %token <op_val> OP
 
 // 非终结符的类型定义，ast_val的数据类型会被映射到右边的所有非终结符
 // str_val include these NonTerminal Symbols
 // %type can be seen as content type of str_val
-// %type <str_val> FuncDef FuncType Block Stmt Number
-
-// Lv1.3
-%type <ast_val> FuncDef FuncType Block Stmt
+// Lv3.1
+%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp
 %type <int_val> Number
+%type <str_val> UnaryOp
 
 %%
 
@@ -133,32 +136,83 @@ Block
     auto ast = new BlockAST();
     ast->stmt = unique_ptr<BaseAST>($2);
     $$ = ast;
-    // auto stmt = unique_ptr<string>($2);
-    // $$ = new string("{ " + *stmt + " }");
   }
   ;
 
 Stmt
-  : RETURN Number ';' {
+  // : RETURN Number ';' {
+  : RETURN Exp ';' {
     auto ast = new StmtAST();
-    ast->statement = to_string($2);
+    // ast->statement = to_string($2);
+    ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
-    // auto number = unique_ptr<string>($2);
-    // $$ = new string("return " + *number + ";");
   }
   ;
+
+Exp         
+  : UnaryExp {
+    auto ast = new ExpAST();
+    ast->unaryExp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+;
+
+PrimaryExp  
+  : '(' Exp ')' {
+    auto ast = new PrimaryExpAST();
+    ast->selection = 1;
+    ast->exp = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  | Number {
+    auto ast = new PrimaryExpAST();
+    ast->selection = 2;
+    ast->number = $1; // it's of int32
+    $$ = ast;
+  }
+;
+
+UnaryExp    
+  : PrimaryExp {
+    auto ast = new UnaryExpAST();
+    ast->selection = 1;
+    ast->primaryExp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  } 
+  | UnaryOp UnaryExp {
+    auto ast = new UnaryExpAST();
+    ast->selection = 2;
+    ast->unaryOp = *unique_ptr<string>($1);
+    ast->unaryExp = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+;
+
+UnaryOp
+  : '+' { $$ = new string("+"); }
+  | '-' { $$ = new string("-"); }
+  | '!' { $$ = new string("!"); }
+;
 
 Number
   : INT_CONST {
     $$ = $1;
-    // $$ = new string(to_string($1));
   }
-  ;
+;
 
 %%
 
 // 定义错误处理函数, 其中第二个参数是错误信息
 // parser 如果发生错误 (例如输入的程序出现了语法错误), 就会调用这个函数
 void yyerror(unique_ptr<BaseAST> &ast, const char *s) {
-  cerr << "parser error: " << s << endl;
+  extern int yylineno;	// defined and maintained in lex
+	extern char *yytext;	// defined and maintained in lex
+	int len=strlen(yytext);
+	int i;
+	char buf[512]={0};
+	for (i=0;i<len;++i)
+	{
+		sprintf(buf,"%s%d ",buf,yytext[i]);
+	}
+	fprintf(stderr, "PARSER ERROR: %s at symbol '%c' on line %d\n", s, atoi(buf), yylineno);
 }
