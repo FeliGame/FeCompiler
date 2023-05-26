@@ -108,6 +108,12 @@ test1:
 test2:
 	autotest -riscv -s lv1 /root/compiler/FeCompiler
 
+test3-koopa:
+	autotest -koopa -s lv3 /root/compiler/FeCompiler
+
+test3-riscv:
+	autotest -riscv -s lv3 /root/compiler/FeCompiler
+
 clean:
 	-rm -rf $(BUILD_DIR)
 

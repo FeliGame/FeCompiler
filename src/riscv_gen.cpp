@@ -8,9 +8,10 @@ using namespace std;
 
 fstream fout;
 
+string reg_prev; // 上一个用到的寄存器
+
 // 只需要记录寄存器是否使用，无需存储具体值
 bool reg_t_used[7];
-int last_used_reg_t_id = -1; // 最近使用的寄存器标号
 string alloc_reg_t()
 {
     for (size_t i = 0; i < 8; ++i)
@@ -18,16 +19,16 @@ string alloc_reg_t()
         if (reg_t_used[i])
             continue;
         reg_t_used[i] = true;
-        last_used_reg_t_id = i;
-        return "t" + to_string(i);
+        reg_prev = "t" + to_string(i);
+        return reg_prev;
     }
-    cerr << "NO FREE REG_T!\n";
+    cerr << "Reg Error: NO FREE REG_T!\n";
+    fout.close();
     assert(false);
 }
 
 // 只需要记录寄存器是否使用，无需存储具体值
 bool reg_a_used[8];
-int last_used_reg_a_id = -1; // 最近使用的寄存器标号
 string alloc_reg_a()
 {
     for (size_t i = 0; i < 8; ++i)
@@ -35,10 +36,11 @@ string alloc_reg_a()
         if (reg_a_used[i])
             continue;
         reg_a_used[i] = true;
-        last_used_reg_a_id = i;
-        return "a" + to_string(i);
+        reg_prev = "a" + to_string(i);
+        return reg_prev;
     }
-    cerr << "NO FREE REG_A!\n";
+    cerr << "Reg Error: NO FREE REG_A!\n";
+    fout.close();
     assert(false);
 }
 
@@ -92,6 +94,7 @@ void Visit(const koopa_raw_slice_t &slice)
             break;
         default:
             // 我们暂时不会遇到其他内容, 于是不对其做任何处理
+            fout.close();
             assert(false);
         }
     }
@@ -199,7 +202,7 @@ void Visit(const koopa_raw_value_t &value)
         break;
     default:
         // 其他类型暂时遇不到
-        cerr << "INST KIND: " << kind.tag << endl;
+        cerr << "Inst Error: INST KIND: " << kind.tag << endl;
         fout.close();
         assert(false);
     }
@@ -207,35 +210,44 @@ void Visit(const koopa_raw_value_t &value)
 
 void Visit(const koopa_raw_binary_t &bin_inst)
 {
-    fout << "op: ";
+    // fout << "op: ";
+    string reg_r; // 可能用到的右值寄存器
     switch (bin_inst.op)
     {
-    case KOOPA_RBO_EQ: // EQ指令，翻译成寄存器赋值或常量赋值
-        // eq const1 const2；只缓存const2
-        if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+    case KOOPA_RBO_EQ:
+        // eq l r 翻译为如下RISCV
+        // 判断l r是常数或寄存器？
+        // 对于l r全为常量
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
-            fout << "li " << alloc_reg_a() << " " << bin_inst.rhs->kind.data.integer.value;
-        } // 否则，将某条指令结果存储的值赋给新的寄存器
+            int32_t l = bin_inst.lhs->kind.data.integer.value;
+            int32_t r = bin_inst.rhs->kind.data.integer.value;
+            // 都是常数，就直接计算l==r，最快，减少RISCV指令数量
+            fout << "li\t" << alloc_reg_t() << ", " << (l == r) << "\n";
+        }
         else
         {
-            string rref_reg_a = "a" + to_string(last_used_reg_a_id); // 缓存上条指令的存储位置
-            fout << "eq " << alloc_reg_a() << " ";
+            // ...
+            cerr << "Inst Error: in EQ: Undefined branch!\n";
+            cerr << bin_inst.lhs->kind.tag << " " << bin_inst.rhs->kind.tag << endl;
+            fout.close();
+            assert(false);
         }
-
+        break;
+    case KOOPA_RBO_SUB:
+        // 一元操作符运算
+        reg_r = reg_prev; // 右值是原来的寄存器名称
+        fout << "sub\t" << alloc_reg_t() << ", x0, " << reg_r << "\n";
         break;
     default:
-        cerr << "[Unsupported op]";
+        cerr << "Inst Error: Unsupported op!";
         fout << bin_inst.op;
     }
-    fout << " \n";
 }
 
 void Visit(const koopa_raw_store_t &store)
 {
-    Visit(store.dest);
-    fout << " ";
-    Visit(store.value);
-    fout << " \n";
 }
 
 void Visit(const koopa_raw_value_kind_t &kind)
@@ -245,8 +257,10 @@ void Visit(const koopa_raw_value_kind_t &kind)
 
 void Visit(const koopa_raw_return_t &ret)
 {
-    Visit(ret.value);
-    fout << " ret\n";
+    string reg_r = reg_prev;
+    fout << "mv\t" << alloc_reg_a() << ", " << reg_prev << "\n";
+    // Visit(ret.value);
+    fout << "ret\n";
 }
 
 void Visit(const koopa_raw_integer_t &_int)
