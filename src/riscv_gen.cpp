@@ -8,6 +8,7 @@ using namespace std;
 
 fstream fout;
 
+string reg_prev_prev; // 上上个用到的寄存器
 string reg_prev; // 上一个用到的寄存器
 
 // 只需要记录寄存器是否使用，无需存储具体值
@@ -19,12 +20,18 @@ string alloc_reg_t()
         if (reg_t_used[i])
             continue;
         reg_t_used[i] = true;
+        reg_prev_prev = reg_prev;
         reg_prev = "t" + to_string(i);
         return reg_prev;
     }
     cerr << "Reg Error: NO FREE REG_T!\n";
     fout.close();
     assert(false);
+}
+
+// 将直接数注册到寄存器中
+inline void save_reg(int32_t imm) {
+    fout << "li\t" << alloc_reg_t() << ", " << imm << "\n";
 }
 
 // 只需要记录寄存器是否使用，无需存储具体值
@@ -36,6 +43,7 @@ string alloc_reg_a()
         if (reg_a_used[i])
             continue;
         reg_a_used[i] = true;
+        reg_prev_prev = reg_prev;
         reg_prev = "a" + to_string(i);
         return reg_prev;
     }
@@ -210,21 +218,19 @@ void Visit(const koopa_raw_value_t &value)
 
 void Visit(const koopa_raw_binary_t &bin_inst)
 {
-    // fout << "op: ";
-    string reg_r; // 可能用到的右值寄存器
+    // 对于l r全为常量，就直接计算l==r，最快，减少RISCV指令数量
+    int32_t l = bin_inst.lhs->kind.data.integer.value;
+    int32_t r = bin_inst.rhs->kind.data.integer.value;
+          
     switch (bin_inst.op)
     {
     case KOOPA_RBO_EQ:
         // eq l r 翻译为如下RISCV
         // 判断l r是常数或寄存器？
-        // 对于l r全为常量
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
             (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
-            int32_t l = bin_inst.lhs->kind.data.integer.value;
-            int32_t r = bin_inst.rhs->kind.data.integer.value;
-            // 都是常数，就直接计算l==r，最快，减少RISCV指令数量
-            fout << "li\t" << alloc_reg_t() << ", " << (l == r) << "\n";
+            save_reg(l == r);
         }
         else
         {
@@ -236,13 +242,50 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         break;
     case KOOPA_RBO_SUB:
-        // 一元操作符运算
-        reg_r = reg_prev; // 右值是原来的寄存器名称
-        fout << "sub\t" << alloc_reg_t() << ", x0, " << reg_r << "\n";
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l - r);
+        }
+        else
+        {
+            // 【待改进】这里将其视为一元操作符运算 0 - %t
+            fout << "sub\t" << alloc_reg_t() << ", x0, " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_ADD:
+        // 二元加法（一元的正号已在语义分析阶段过滤）
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l + r);
+        }
+        else
+        {
+            if(bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+            save_reg(l);
+            if(bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            save_reg(r);
+            fout << "add\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_MUL: // 二元乘法
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l * r);
+        }
+        else
+        {
+            if(bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+            save_reg(l);
+            if(bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+            save_reg(r);
+            fout << "mul\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
         break;
     default:
-        cerr << "Inst Error: Unsupported op!";
-        fout << bin_inst.op;
+        cerr << "Inst Error: Unsupported op: " << bin_inst.op;
     }
 }
 
@@ -257,8 +300,7 @@ void Visit(const koopa_raw_value_kind_t &kind)
 
 void Visit(const koopa_raw_return_t &ret)
 {
-    string reg_r = reg_prev;
-    fout << "mv\t" << alloc_reg_a() << ", " << reg_prev << "\n";
+    fout << "mv\t" << alloc_reg_a() << ", " << reg_prev_prev << "\n";
     // Visit(ret.value);
     fout << "ret\n";
 }
