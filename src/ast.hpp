@@ -7,29 +7,48 @@
 #include <cassert>
 
 using namespace std;
-
+// 不能全局声明变量和函数！！！
 // 所有 AST 的基类
 class BaseAST
 {
 public:
     int64_t t_id = -1; // 表达式计算结果的变量名序号
-    string t_val;      // 表达式计算结果的值
-    enum ValueType {VT_INT} t_type;   // 表达式计算结果的类型
+    // 【可优化】如果一个式子规约到出现第一条IR时，此后无需再计算t_val值，除非想优化
+    string t_val; // 表达式计算结果的值，主要是因为部分指令对值没有影响，因此需要通过它来继承
+    enum ValueType
+    {
+        VT_INT
+    } t_type; // 表达式计算结果的类型
 
     virtual ~BaseAST() = default;
     // Dump translates the AST into Koopa IR string
     virtual string Dump() = 0;
 
     // 获取引用名（常作为左值）
-    string Get_ref()
+    string get_ref()
     {
         return "%" + to_string(t_id);
     }
 
     // 如有可能，获取引用名（常作为右值）
-    string Get_ref_if_possible()
+    string get_ref_if_possible()
     {
-        return (t_id == -1 ? t_val : Get_ref());
+        return (t_id == -1 ? t_val : get_ref());
+    }
+
+    string get_koopa_op(string op)
+    {
+        if (op == "*")
+            return "mul";
+        else if (op == "/")
+            return "div";
+        else if (op == "%")
+            return "mod";
+        else if (op == "+")
+            return "add";
+        else if (op == "-")
+            return "sub";
+        assert(false);
     }
 };
 
@@ -39,7 +58,7 @@ public:
     // 用智能指针管理对象
     unique_ptr<BaseAST> func_def;
 
-    string Dump()   override
+    string Dump() override
     {
         string s = func_def->Dump();
         return s;
@@ -53,7 +72,7 @@ public:
     string ident;                  // 函数名
     unique_ptr<BaseAST> block;     // 函数体
 
-    string Dump()   override
+    string Dump() override
     {
         string s = "fun @" + ident + "(): " + func_type->Dump() + " {\n%entry:\n" + block->Dump() + "}";
         return s;
@@ -65,7 +84,7 @@ class FuncTypeAST : public BaseAST
 public:
     string type;
 
-    string Dump()   override
+    string Dump() override
     {
         string s = "\0";
         if (type == "int")
@@ -79,7 +98,7 @@ class BlockAST : public BaseAST
 public:
     unique_ptr<BaseAST> stmt; // 一个分号对应一个stmt
 
-    string Dump()   override
+    string Dump() override
     {
         string s = stmt->Dump();
         return s;
@@ -91,16 +110,10 @@ class StmtAST : public BaseAST
 public:
     unique_ptr<BaseAST> exp; // 表达式
 
-    string Dump()   override
+    string Dump() override
     {
-        // 对于return +(- -!6); 应当输出：
-        // %0 = eq 6, 0
-        // %1 = sub 0, %0
-        // %2 = sub 0, %1
-        // ret %2
         string s = exp->Dump();
-        s = s + "ret " + exp->Get_ref_if_possible() + "\n"; // 指令行
-        cerr << "debug: " << exp->t_id << " " << exp->t_val << endl;
+        s = s + "ret " + exp->get_ref_if_possible() + "\n"; // 指令行
         return s;
     }
 };
@@ -109,15 +122,33 @@ public:
 class ExpAST : public BaseAST
 {
 public:
-    unique_ptr<BaseAST> unaryExp; // 目前仅支持一元表达式
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    unique_ptr<BaseAST> unaryExp; // 一元表达式
+    unique_ptr<BaseAST> addExp;   // 加法表达式
 
-    string Dump()   override
+    string Dump() override
     {
-        // 值不发生改变，因此原样复制
-        string s = unaryExp->Dump();
-        t_id = unaryExp->t_id;
-        t_val = unaryExp->t_val;
-        t_type = unaryExp->t_type;
+        string s;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = unaryExp->Dump();
+            t_id = unaryExp->t_id;
+            t_val = unaryExp->t_val;
+            t_type = unaryExp->t_type;
+            break;
+        case 2:
+            // 值不发生改变，因此原样复制
+            s = addExp->Dump();
+            t_id = addExp->t_id;
+            t_val = addExp->t_val;
+            t_type = addExp->t_type;
+            break;
+        default:
+            assert(false);
+        }
         return s;
     }
 };
@@ -133,7 +164,7 @@ public:
     // 产生式2
     uint32_t number; // 整数
 
-    string Dump()   override
+    string Dump() override
     {
         string s;
         switch (selection)
@@ -172,39 +203,34 @@ public:
     string unaryOp;               // 一元算符
     unique_ptr<BaseAST> unaryExp; // 一元表达式
 
-    string Dump()   override
+    string Dump() override
     {
         string s;
         switch (selection)
         {
         case 1:
             s = primaryExp->Dump();
-            // 2.该式子规约Number(6)，没有计算指令
             t_id = primaryExp->t_id;
             t_val = primaryExp->t_val;
             t_type = primaryExp->t_type;
             break;
         case 2:
-            // 3. 第一次计算：!6 => %0 = eq 6, 0 他知道是eq 6 0，是因为被计算值非零
-            // 4. 第二次计算：-!6 => %1 = sub 0, %0
-            // 5. 第三次计算：- -!6 => %2 = sub 0, %1
-            // 7. +(- -!6) "+"计算不会产生新的IR，没有计算和其他操作
             t_type = unaryExp->t_type;
             if (unaryOp == "!")
             {
-                s = unaryExp->Dump();   // 先计算子表达式的值
-                t_id = unaryExp->t_id + 1;                            // 分配新临时变量
-                s = s + Get_ref() + " = eq " + unaryExp->Get_ref_if_possible() + ", 0\n";
+                s = unaryExp->Dump();      // 先计算子表达式的值
+                t_id = unaryExp->t_id + 1; // 分配新临时变量
+                s = s + get_ref() + " = eq " + unaryExp->get_ref_if_possible() + ", 0\n";
                 t_val = to_string(!atoi(unaryExp->t_val.data()));
             }
             else if (unaryOp == "-")
             {
                 s = unaryExp->Dump();
                 t_id = unaryExp->t_id + 1; // 分配新临时变量
-                s = s + Get_ref() + " = sub 0, " + unaryExp->Get_ref_if_possible() + "\n";
+                s = s + get_ref() + " = sub 0, " + unaryExp->get_ref_if_possible() + "\n";
                 t_val = to_string(-atoi(unaryExp->t_val.data()));
             }
-            else if (unaryOp == "+")    // 不产生新指令，照搬之前的指令
+            else if (unaryOp == "+") // 不产生新指令，照搬之前的指令
             {
                 s = unaryExp->Dump();
                 t_id = unaryExp->t_id;
@@ -213,7 +239,114 @@ public:
             t_type = unaryExp->t_type;
             break;
         default:
-            cerr << "Parsing Error in: UnaryExp:=PrimaryExp|UnaryOp UnaryExp\n";
+            cerr << "Parsing Error: in UnaryExp:=PrimaryExp|UnaryOp UnaryExp\n";
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class MulExpAST : public BaseAST
+{
+public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> unaryExp; // 一元表达式
+    // 产生式2
+    string mulOp; // 多元算符
+    unique_ptr<BaseAST> mulExp;
+
+    string Dump() override
+    {
+        string s, s1;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = unaryExp->Dump();
+            t_id = unaryExp->t_id;
+            t_val = unaryExp->t_val;
+            t_type = unaryExp->t_type;
+            break;
+        case 2:
+            s = mulExp->Dump();    // 先求出多元式（左结合）
+            s1 = unaryExp->Dump(); // 然后求出一元式
+
+            t_type = mulExp->t_type;   // 没有考虑类型转换和检查
+            t_id = unaryExp->t_id + 1; // 分配新临时变量
+
+            s = s + s1 +
+                get_ref() + " = " + get_koopa_op(mulOp) + " "
+                mulExp->get_ref_if_possible() + ", " +
+                unaryExp->get_ref_if_possible() + "\n";
+
+            if (mulOp == "*")
+            {
+                t_val = to_string(atoi(mulExp->t_val.data()) * atoi(unaryExp->t_val.data()));
+            }
+            else if (mulOp == "/")
+            {
+                t_val = to_string(atoi(mulExp->t_val.data()) / atoi(unaryExp->t_val.data()));
+            }
+            else if (mulOp == "%")
+            {
+                t_val = to_string(atoi(mulExp->t_val.data()) % atoi(unaryExp->t_val.data()));
+            }
+            break;
+        default:
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class AddExpAST : public BaseAST
+{
+public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> mulExp;
+    // 产生式2
+    string mulOp; // 多元算符
+    unique_ptr<BaseAST> addExp;
+
+    string Dump() override
+    {
+        string s, s1;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = mulExp->Dump();
+            t_id = mulExp->t_id;
+            t_val = mulExp->t_val;
+            t_type = mulExp->t_type;
+            break;
+        case 2:
+            s = addExp->Dump();
+            s1 = mulExp->Dump();
+
+            t_type = addExp->t_type; // 没有考虑类型转换和检查
+            t_id = mulExp->t_id + 1;
+
+            s = s + s1 +
+                get_ref() + " = " + get_koopa_op(mulOp) + " "
+                addExp->get_ref_if_possible() + ", " +
+                mulExp->get_ref_if_possible() + "\n";
+
+            if (mulOp == "+")
+            {
+                t_val = to_string(atoi(addExp->t_val.data()) + atoi(mulExp->t_val.data()));
+            }
+            else if (mulOp == "-")
+            {
+                t_val = to_string(atoi(addExp->t_val.data()) - atoi(mulExp->t_val.data()));
+            }
+
+            break;
+        default:
             assert(false);
         }
         return s;

@@ -4,7 +4,9 @@ src/koopa.h is only used for IntelliSense when developing the compiler.
 When making the program, you should remove src/koopa.h, or the compiling process will fail.
 
 ## Grammar Definition (EBNF)
-added in Lv2:
+// pay attention to UB(Undefined Behavior), we can optimize a lot with ignoring UB. 
+
+### added in Lv2:
 CompUnit    ::= FuncDef;
 
 FuncDef     ::= FuncType IDENT "(" ")" Block;
@@ -12,7 +14,7 @@ FuncType    ::= "int";
 
 Block       ::= "{" Stmt "}";
 
-### added in Lv3 (same as C, type only includes uint32):
+### modified/added in Lv3.1 
 // pay attention to UB(Undefined Behavior), we can optimize a lot with ignoring UB. 
 
 Stmt        ::= "return" Exp ";";
@@ -23,6 +25,12 @@ Number      ::= INT_CONST;
 UnaryExp    ::= PrimaryExp | UnaryOp UnaryExp;
 UnaryOp     ::= "+" | "-" | "!";
 
+### modified/added in Lv3.2
+
+Exp         ::= UnaryExp | AddExp;
+
+MulExp      ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
+AddExp      ::= MulExp | AddExp ("+" | "-") MulExp;
 
 ### Complete Edition
 CompUnit    ::= FuncDef;

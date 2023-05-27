@@ -74,7 +74,7 @@ using namespace std;
 // str_val include these NonTerminal Symbols
 // %type can be seen as content type of str_val
 // Lv3.1
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp
+%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp
 %type <int_val> Number
 %type <str_val> UnaryOp
 
@@ -152,7 +152,14 @@ Stmt
 Exp         
   : UnaryExp {
     auto ast = new ExpAST();
+    ast->selection = 1;
     ast->unaryExp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | AddExp {
+    auto ast = new ExpAST();
+    ast->selection = 2;
+    ast->addExp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
 ;
@@ -169,6 +176,12 @@ PrimaryExp
     ast->selection = 2;
     ast->number = $1; // it's of int32
     $$ = ast;
+  }
+;
+
+Number
+  : INT_CONST {
+    $$ = $1;
   }
 ;
 
@@ -194,12 +207,64 @@ UnaryOp
   | '!' { $$ = new string("!"); }
 ;
 
-Number
-  : INT_CONST {
-    $$ = $1;
+// 多元表达式
+MulExp
+  : UnaryExp {
+    auto ast = new MulExpAST();
+    ast->selection = 1;
+    ast->unaryExp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | MulExp '*' UnaryExp {
+    auto ast = new MulExpAST();
+    ast->selection = 2;
+    ast->mulExp = unique_ptr<BaseAST>($1);
+    ast->mulOp = "*";
+    ast->unaryExp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | MulExp '/' UnaryExp {
+    auto ast = new MulExpAST();
+    ast->selection = 2;
+    ast->mulExp = unique_ptr<BaseAST>($1);
+    ast->mulOp = "/";
+    ast->unaryExp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | MulExp '%' UnaryExp {
+    auto ast = new MulExpAST();
+    ast->selection = 2;
+    ast->mulExp = unique_ptr<BaseAST>($1);
+    ast->mulOp = "%";
+    ast->unaryExp = unique_ptr<BaseAST>($3);
+    $$ = ast;
   }
 ;
 
+AddExp
+  : MulExp {
+    auto ast = new AddExpAST();
+    ast->selection = 1;
+    ast->mulExp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | AddExp '+' MulExp {
+    auto ast = new AddExpAST();
+    ast->selection = 2;
+    ast->addExp = unique_ptr<BaseAST>($1);
+    ast->mulOp = "+";
+    ast->mulExp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | AddExp '-' MulExp {
+    auto ast = new AddExpAST();
+    ast->selection = 2;
+    ast->addExp = unique_ptr<BaseAST>($1);
+    ast->mulOp = "-";
+    ast->mulExp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+;
 %%
 
 // 定义错误处理函数, 其中第二个参数是错误信息
