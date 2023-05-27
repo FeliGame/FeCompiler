@@ -277,7 +277,7 @@ public:
             t_id = unaryExp->t_id + 1; // 分配新临时变量
 
             s = s + s1 +
-                get_ref() + " = " + get_koopa_op(mulOp) + " "
+                get_ref() + " = " + get_koopa_op(mulOp) + " " + 
                 mulExp->get_ref_if_possible() + ", " +
                 unaryExp->get_ref_if_possible() + "\n";
 
@@ -332,7 +332,7 @@ public:
             t_id = mulExp->t_id + 1;
 
             s = s + s1 +
-                get_ref() + " = " + get_koopa_op(mulOp) + " "
+                get_ref() + " = " + get_koopa_op(mulOp) + " " +
                 addExp->get_ref_if_possible() + ", " +
                 mulExp->get_ref_if_possible() + "\n";
 
