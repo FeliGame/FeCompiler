@@ -9,7 +9,7 @@ using namespace std;
 fstream fout;
 
 string reg_prev_prev; // 上上个用到的寄存器
-string reg_prev; // 上一个用到的寄存器
+string reg_prev;      // 上一个用到的寄存器
 
 // 只需要记录寄存器是否使用，无需存储具体值
 bool reg_t_used[7];
@@ -30,7 +30,8 @@ string alloc_reg_t()
 }
 
 // 将直接数注册到寄存器中
-inline void save_reg(int32_t imm) {
+inline void save_reg(int32_t imm)
+{
     fout << "li\t" << alloc_reg_t() << ", " << imm << "\n";
 }
 
@@ -221,7 +222,7 @@ void Visit(const koopa_raw_binary_t &bin_inst)
     // 对于l r全为常量，就直接计算l==r，最快，减少RISCV指令数量
     int32_t l = bin_inst.lhs->kind.data.integer.value;
     int32_t r = bin_inst.rhs->kind.data.integer.value;
-          
+
     switch (bin_inst.op)
     {
     case KOOPA_RBO_EQ:
@@ -239,6 +240,21 @@ void Visit(const koopa_raw_binary_t &bin_inst)
             cerr << bin_inst.lhs->kind.tag << " " << bin_inst.rhs->kind.tag << endl;
             fout.close();
             assert(false);
+        }
+        break;
+    case KOOPA_RBO_NOT_EQ:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l != r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "ne\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
         }
         break;
     case KOOPA_RBO_SUB:
@@ -262,10 +278,10 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if(bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-            save_reg(l);
-            if(bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            save_reg(r);
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
             fout << "add\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
         }
         break;
@@ -277,11 +293,102 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if(bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-            save_reg(l);
-            if(bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-            save_reg(r);
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
             fout << "mul\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_GE:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l >= r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "sge\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_GT:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l > r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            // sgt is pseudo instruct(RISCV-SPEC-20191213-P130)
+            fout << "sgt\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_LE:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l <= r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "sle\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_LT:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l < r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "slt\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_AND:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l < r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "and\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+        }
+        break;
+    case KOOPA_RBO_OR:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l < r);
+        }
+        else
+        {
+            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(l);
+            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+                save_reg(r);
+            fout << "or\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
         }
         break;
     default:

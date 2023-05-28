@@ -399,7 +399,7 @@ class RelExpAST : public BaseAST {
             s1 = addExp->Dump();
 
             t_type = relExp->t_type; // 没有考虑类型转换和检查
-            t_id = addExp->t_id + 1;
+            t_id = max(relExp->t_id, addExp->t_id) + 1;
 
             s = s + s1 +
                 get_ref() + " = " + get_koopa_op(relop) + " " +

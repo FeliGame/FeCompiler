@@ -97,7 +97,7 @@ koopa: $(BUILD_DIR)/$(TARGET_EXEC)
 	$(BUILD_DIR)/$(TARGET_EXEC) -$@ test4.fe -o test4.$@
 
 riscv: $(BUILD_DIR)/$(TARGET_EXEC)
-	$(BUILD_DIR)/$(TARGET_EXEC) -$@ test3.fe -o test3.$@
+	$(BUILD_DIR)/$(TARGET_EXEC) -$@ test4.fe -o test4.$@
 
 
 .PHONY: clean test1 test2
