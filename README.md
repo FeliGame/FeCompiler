@@ -32,6 +32,16 @@ Exp         ::= UnaryExp | AddExp;
 MulExp      ::= UnaryExp | MulExp ("*" | "/" | "%") UnaryExp;
 AddExp      ::= MulExp | AddExp ("+" | "-") MulExp;
 
+### modified/added in Lv3.3
+
+Exp         ::= UnaryExp | AddExp | LOrExp;
+
+RelExp      ::= AddExp | RelExp ("<" | ">" | "<=" | ">=") AddExp;
+EqExp       ::= RelExp | EqExp ("==" | "!=") RelExp;
+LAndExp     ::= EqExp | LAndExp "&&" EqExp;
+LOrExp      ::= LAndExp | LOrExp "||" LAndExp;
+
+
 ### Complete Edition
 CompUnit    ::= FuncDef;
 

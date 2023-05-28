@@ -48,6 +48,18 @@ public:
             return "add";
         else if (op == "-")
             return "sub";
+        else if (op == ">=")
+            return "ge";
+        else if (op == "<=")
+            return "le";
+        else if (op == ">")
+            return "gt";
+        else if (op == "<")
+            return "lt";
+        else if (op == "==")
+            return "eq";
+        else if (op == "!=")
+            return "ne";
         assert(false);
     }
 };
@@ -126,6 +138,7 @@ public:
     uint32_t selection;
     unique_ptr<BaseAST> unaryExp; // 一元表达式
     unique_ptr<BaseAST> addExp;   // 加法表达式
+    unique_ptr<BaseAST> lorExp;
 
     string Dump() override
     {
@@ -145,6 +158,13 @@ public:
             t_id = addExp->t_id;
             t_val = addExp->t_val;
             t_type = addExp->t_type;
+            break;
+        case 3:
+            // 值不发生改变，因此原样复制
+            s = lorExp->Dump();
+            t_id = lorExp->t_id;
+            t_val = lorExp->t_val;
+            t_type = lorExp->t_type;
             break;
         default:
             assert(false);
@@ -254,7 +274,7 @@ public:
     // 产生式1
     unique_ptr<BaseAST> unaryExp; // 一元表达式
     // 产生式2
-    string mulOp; // 多元算符
+    string mulop; // 多元算符
     unique_ptr<BaseAST> mulExp;
 
     string Dump() override
@@ -277,19 +297,19 @@ public:
             t_id = unaryExp->t_id + 1; // 分配新临时变量
 
             s = s + s1 +
-                get_ref() + " = " + get_koopa_op(mulOp) + " " + 
+                get_ref() + " = " + get_koopa_op(mulop) + " " + 
                 mulExp->get_ref_if_possible() + ", " +
                 unaryExp->get_ref_if_possible() + "\n";
 
-            if (mulOp == "*")
+            if (mulop == "*")
             {
                 t_val = to_string(atoi(mulExp->t_val.data()) * atoi(unaryExp->t_val.data()));
             }
-            else if (mulOp == "/")
+            else if (mulop == "/")
             {
                 t_val = to_string(atoi(mulExp->t_val.data()) / atoi(unaryExp->t_val.data()));
             }
-            else if (mulOp == "%")
+            else if (mulop == "%")
             {
                 t_val = to_string(atoi(mulExp->t_val.data()) % atoi(unaryExp->t_val.data()));
             }
@@ -309,7 +329,7 @@ public:
     // 产生式1
     unique_ptr<BaseAST> mulExp;
     // 产生式2
-    string mulOp; // 多元算符
+    string mulop; // 多元算符
     unique_ptr<BaseAST> addExp;
 
     string Dump() override
@@ -332,18 +352,221 @@ public:
             t_id = mulExp->t_id + 1;
 
             s = s + s1 +
-                get_ref() + " = " + get_koopa_op(mulOp) + " " +
+                get_ref() + " = " + get_koopa_op(mulop) + " " +
                 addExp->get_ref_if_possible() + ", " +
                 mulExp->get_ref_if_possible() + "\n";
 
-            if (mulOp == "+")
+            if (mulop == "+")
             {
                 t_val = to_string(atoi(addExp->t_val.data()) + atoi(mulExp->t_val.data()));
             }
-            else if (mulOp == "-")
+            else if (mulop == "-")
             {
                 t_val = to_string(atoi(addExp->t_val.data()) - atoi(mulExp->t_val.data()));
             }
+
+            break;
+        default:
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class RelExpAST : public BaseAST {
+    public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> addExp;
+    // 产生式2
+    unique_ptr<BaseAST> relExp;
+    string relop;
+
+    string Dump() override {
+        string s, s1;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = addExp->Dump();
+            t_id = addExp->t_id;
+            t_val = addExp->t_val;
+            t_type = addExp->t_type;
+            break;
+        case 2:
+            s = relExp->Dump();
+            s1 = addExp->Dump();
+
+            t_type = relExp->t_type; // 没有考虑类型转换和检查
+            t_id = addExp->t_id + 1;
+
+            s = s + s1 +
+                get_ref() + " = " + get_koopa_op(relop) + " " +
+                relExp->get_ref_if_possible() + ", " +
+                addExp->get_ref_if_possible() + "\n";
+
+            if (relop == ">")
+            {
+                t_val = to_string(atoi(relExp->t_val.data()) > atoi(addExp->t_val.data()));
+            }
+            else if (relop == "<")
+            {
+                t_val = to_string(atoi(relExp->t_val.data()) < atoi(addExp->t_val.data()));
+            }
+            else if (relop == ">=")
+            {
+                t_val = to_string(atoi(relExp->t_val.data()) >= atoi(addExp->t_val.data()));
+            }
+            else if (relop == "<=")
+            {
+                t_val = to_string(atoi(relExp->t_val.data()) <= atoi(addExp->t_val.data()));
+            }
+
+            break;
+        default:
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class EqExpAST : public BaseAST {
+    public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> relExp;
+    // 产生式2
+    unique_ptr<BaseAST> eqExp;
+    string eqop;
+
+    string Dump() override {
+        string s, s1;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = relExp->Dump();
+            t_id = relExp->t_id;
+            t_val = relExp->t_val;
+            t_type = relExp->t_type;
+            break;
+        case 2:
+            s = eqExp->Dump();
+            s1 = relExp->Dump();
+
+            t_type = eqExp->t_type; // 没有考虑类型转换和检查
+            t_id = relExp->t_id + 1;
+
+            s = s + s1 +
+                get_ref() + " = " + get_koopa_op(eqop) + " " +
+                eqExp->get_ref_if_possible() + ", " +
+                relExp->get_ref_if_possible() + "\n";
+
+            if (eqop == "==")
+            {
+                t_val = to_string(atoi(eqExp->t_val.data()) == atoi(relExp->t_val.data()));
+            }
+            else if (eqop == "!=")
+            {
+                t_val = to_string(atoi(eqExp->t_val.data()) != atoi(relExp->t_val.data()));
+            }
+
+            break;
+        default:
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class LAndExpAST : public BaseAST {
+    public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> eqExp;
+    // 产生式2
+    unique_ptr<BaseAST> landExp;
+
+    string Dump() override {
+        string s, s1, s2, s3;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = eqExp->Dump();
+            t_id = eqExp->t_id;
+            t_val = eqExp->t_val;
+            t_type = eqExp->t_type;
+            break;
+        case 2:
+            s = landExp->Dump();
+            s1 = eqExp->Dump();
+
+            t_type = landExp->t_type; // 没有考虑类型转换和检查
+            t_id = eqExp->t_id + 1;
+    // Koopa IR只支持按位与；a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = and %1, %2; 
+            s = s + s1 +
+                get_ref() + " = ne " +
+                landExp->get_ref_if_possible() + ", 0\n"; 
+            s2 = get_ref();
+            ++t_id;
+            s = s + get_ref() + " = ne " +
+                eqExp->get_ref_if_possible() + ", 0\n";
+            s3 = get_ref();
+            ++t_id;
+            s = s + get_ref() + " = and " + s2 + ", " + s3 + "\n";
+            t_val = to_string(atoi(landExp->t_val.data()) || atoi(eqExp->t_val.data()));
+
+            break;
+        default:
+            assert(false);
+        }
+        return s;
+    }
+};
+
+class LOrExpAST : public BaseAST {
+    public:
+    // 表示选择了哪个产生式
+    uint32_t selection;
+    // 产生式1
+    unique_ptr<BaseAST> landExp;
+    // 产生式2
+    unique_ptr<BaseAST> lorExp;
+
+    string Dump() override {
+        string s, s1, s2, s3;
+        switch (selection)
+        {
+        case 1:
+            // 值不发生改变，因此原样复制
+            s = landExp->Dump();
+            t_id = landExp->t_id;
+            t_val = landExp->t_val;
+            t_type = landExp->t_type;
+            break;
+        case 2:
+            s = lorExp->Dump();
+            s1 = landExp->Dump();
+
+            t_type = lorExp->t_type; // 没有考虑类型转换和检查
+            t_id = landExp->t_id + 1;
+    // Koopa IR只支持按位或; a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = or %1, %2; 
+            s = s + s1 +
+                get_ref() + " = ne " +
+                lorExp->get_ref_if_possible() + ", 0\n"; 
+            s2 = get_ref();
+            ++t_id;
+            s = s + get_ref() + " = ne " +
+                landExp->get_ref_if_possible() + ", 0\n";
+            s3 = get_ref();
+            ++t_id;
+            s = s + get_ref() + " = or " + s2 + ", " + s3 + "\n";
+
+            t_val = to_string(atoi(lorExp->t_val.data()) || atoi(landExp->t_val.data()));
 
             break;
         default:
