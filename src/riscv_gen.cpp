@@ -8,14 +8,17 @@ using namespace std;
 
 fstream fout;
 
-string reg_prev_prev; // 上上个用到的寄存器
-string reg_prev;      // 上一个用到的寄存器
+string reg_prev_prev = ""; // 上上个用到的寄存器
+string reg_prev = "";      // 上一个用到的寄存器
 
 // 只需要记录寄存器是否使用，无需存储具体值
 bool reg_t_used[7];
-string alloc_reg_t()
+// 只需要记录寄存器是否使用，无需存储具体值
+bool reg_a_used[8];
+
+string alloc_reg()
 {
-    for (size_t i = 0; i < 8; ++i)
+    for (size_t i = 0; i < 7; ++i)
     {
         if (reg_t_used[i])
             continue;
@@ -25,20 +28,7 @@ string alloc_reg_t()
         return reg_prev;
     }
     cerr << "Reg Error: NO FREE REG_T!\n";
-    fout.close();
-    assert(false);
-}
 
-// 将直接数注册到寄存器中
-inline void save_reg(int32_t imm)
-{
-    fout << "li\t" << alloc_reg_t() << ", " << imm << "\n";
-}
-
-// 只需要记录寄存器是否使用，无需存储具体值
-bool reg_a_used[8];
-string alloc_reg_a()
-{
     for (size_t i = 0; i < 8; ++i)
     {
         if (reg_a_used[i])
@@ -51,6 +41,31 @@ string alloc_reg_a()
     cerr << "Reg Error: NO FREE REG_A!\n";
     fout.close();
     assert(false);
+}
+
+// 将直接数注册到寄存器中
+inline void save_reg(int32_t imm)
+{
+    fout << "li\t" << alloc_reg() << ", " << imm << "\n";
+}
+
+// 配套try_save_reg使用
+string reg_l, reg_r;
+// 判断左右操作数是否为直接数，将直接数存入寄存器再进行计算
+inline void try_save_reg(const koopa_raw_binary_t &bin_inst)
+{
+    if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
+    {
+        save_reg(bin_inst.lhs->kind.data.integer.value);
+        reg_l = reg_prev;
+    }
+    else 
+        reg_l = reg_prev;
+    if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
+    {
+        save_reg(bin_inst.rhs->kind.data.integer.value);
+    }
+    reg_r = reg_prev;
 }
 
 void Visit(const koopa_raw_program_t &program, const char *filePath)
@@ -225,9 +240,7 @@ void Visit(const koopa_raw_binary_t &bin_inst)
 
     switch (bin_inst.op)
     {
-    case KOOPA_RBO_EQ:
-        // eq l r 翻译为如下RISCV
-        // 判断l r是常数或寄存器？
+    case KOOPA_RBO_EQ:  // riscv没有直接eq指令
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
             (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
@@ -235,11 +248,12 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            // ...
-            cerr << "Inst Error: in EQ: Undefined branch!\n";
-            cerr << bin_inst.lhs->kind.tag << " " << bin_inst.rhs->kind.tag << endl;
-            fout.close();
-            assert(false);
+            try_save_reg(bin_inst);
+            fout << "slt\t"<< alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
+            fout << "sgt\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
+            string reg_lt = reg_prev_prev, reg_gt = reg_prev;
+            fout << "or\t" << alloc_reg() << ", " << reg_lt << ", " << reg_gt << "\n";
+            fout << "seqz\t" << reg_prev << ", " << reg_prev << "\n";
         }
         break;
     case KOOPA_RBO_NOT_EQ:
@@ -250,11 +264,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "ne\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "ne\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_SUB:
@@ -265,8 +276,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            // 【待改进】这里将其视为一元操作符运算 0 - %t
-            fout << "sub\t" << alloc_reg_t() << ", x0, " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "sub\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_ADD:
@@ -278,11 +289,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "add\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "add\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_MUL: // 二元乘法
@@ -293,11 +301,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "mul\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "mul\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_GE:
@@ -308,11 +313,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "sge\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "sge\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_GT:
@@ -323,12 +325,9 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
+            try_save_reg(bin_inst);
             // sgt is pseudo instruct(RISCV-SPEC-20191213-P130)
-            fout << "sgt\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            fout << "sgt\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_LE:
@@ -339,11 +338,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "sle\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "sle\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_LT:
@@ -354,11 +350,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "slt\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "slt\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_AND:
@@ -369,11 +362,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "and\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "and\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     case KOOPA_RBO_OR:
@@ -384,11 +374,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         }
         else
         {
-            if (bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(l);
-            if (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER)
-                save_reg(r);
-            fout << "or\t" << alloc_reg_t() << ", " << reg_prev_prev << ", " << reg_prev << "\n";
+            try_save_reg(bin_inst);
+            fout << "or\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
         }
         break;
     default:
@@ -407,14 +394,16 @@ void Visit(const koopa_raw_value_kind_t &kind)
 
 void Visit(const koopa_raw_return_t &ret)
 {
-    fout << "mv\t" << alloc_reg_a() << ", " << reg_prev_prev << "\n";
-    // Visit(ret.value);
+    // 如果只有直接数，则先写入寄存器，再mv（因为mv不能用直接数）
+    if(reg_prev == "")
+        save_reg(ret.value->kind.data.integer.value);
+    fout << "mv\ta0, "<< reg_prev << "\n";
     fout << "ret\n";
 }
 
 void Visit(const koopa_raw_integer_t &_int)
 {
-    fout << " integer: " << _int.value << "\n";
+    fout << _int.value << "\n";
 }
 
 // 访问对应类型指令的函数定义略

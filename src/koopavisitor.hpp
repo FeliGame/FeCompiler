@@ -7,7 +7,7 @@
 using namespace std;
 
 // 分配t寄存器组（t0~t6）
-string alloc_reg_t();
+string alloc_reg();
 // 分配a寄存器组（a0~a7）
 string alloc_reg_a();
 
