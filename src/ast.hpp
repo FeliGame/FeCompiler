@@ -8,11 +8,15 @@
 
 using namespace std;
 // 不能全局声明变量和函数！！！
+
+// 全局临时变量使用记录
+static bool global_t_id[1024];
+
 // 所有 AST 的基类
 class BaseAST
 {
 public:
-    int64_t t_id = -1; // 表达式计算结果的变量名序号
+    int32_t t_id = -1; // 表达式计算结果的变量名序号
     // 【可优化】如果一个式子规约到出现第一条IR时，此后无需再计算t_val值，除非想优化
     string t_val; // 表达式计算结果的值，主要是因为部分指令对值没有影响，因此需要通过它来继承
     enum ValueType
@@ -23,6 +27,24 @@ public:
     virtual ~BaseAST() = default;
     // Dump translates the AST into Koopa IR string
     virtual string Dump() = 0;
+
+    // 从全局t_id分配新的t_id给当前节点
+    void alloc_ref()
+    {
+        for(size_t i = 0; i < 1024; ++i) {
+            if(!global_t_id[i]) {
+                t_id = i;
+                global_t_id[i] = true;
+                return;
+            }
+        }
+    }
+    // 释放（尽可能用少的t_id，减少寄存器浪费空间）
+    void free_ref(int32_t t_id)
+    {
+        if(t_id == -1) return;
+        global_t_id[t_id] = false;
+    }
 
     // 获取引用名（常作为左值）
     string get_ref()
@@ -239,14 +261,14 @@ public:
             if (unaryOp == "!")
             {
                 s = unaryExp->Dump();      // 先计算子表达式的值
-                t_id = unaryExp->t_id + 1; // 分配新临时变量
+                alloc_ref(); // 分配新临时变量
                 s = s + get_ref() + " = eq " + unaryExp->get_ref_if_possible() + ", 0\n";
                 t_val = to_string(!atoi(unaryExp->t_val.data()));
             }
             else if (unaryOp == "-")
             {
                 s = unaryExp->Dump();
-                t_id = unaryExp->t_id + 1; // 分配新临时变量
+                alloc_ref(); // 分配新临时变量
                 s = s + get_ref() + " = sub 0, " + unaryExp->get_ref_if_possible() + "\n";
                 t_val = to_string(-atoi(unaryExp->t_val.data()));
             }
@@ -294,7 +316,7 @@ public:
             s1 = unaryExp->Dump(); // 然后求出一元式
 
             t_type = mulExp->t_type;   // 没有考虑类型转换和检查
-            t_id = unaryExp->t_id + 1; // 分配新临时变量
+            alloc_ref(); // 分配新临时变量
 
             s = s + s1 +
                 get_ref() + " = " + get_koopa_op(mulop) + " " + 
@@ -349,7 +371,7 @@ public:
             s1 = mulExp->Dump();
 
             t_type = addExp->t_type; // 没有考虑类型转换和检查
-            t_id = mulExp->t_id + 1;
+            alloc_ref();
 
             s = s + s1 +
                 get_ref() + " = " + get_koopa_op(mulop) + " " +
@@ -399,7 +421,7 @@ class RelExpAST : public BaseAST {
             s1 = addExp->Dump();
 
             t_type = relExp->t_type; // 没有考虑类型转换和检查
-            t_id = max(relExp->t_id, addExp->t_id) + 1;
+            alloc_ref();
 
             s = s + s1 +
                 get_ref() + " = " + get_koopa_op(relop) + " " +
@@ -457,7 +479,7 @@ class EqExpAST : public BaseAST {
             s1 = relExp->Dump();
 
             t_type = eqExp->t_type; // 没有考虑类型转换和检查
-            t_id = relExp->t_id + 1;
+            alloc_ref();
 
             s = s + s1 +
                 get_ref() + " = " + get_koopa_op(eqop) + " " +
@@ -506,17 +528,17 @@ class LAndExpAST : public BaseAST {
             s1 = eqExp->Dump();
 
             t_type = landExp->t_type; // 没有考虑类型转换和检查
-            t_id = eqExp->t_id + 1;
+            alloc_ref();
     // Koopa IR只支持按位与；a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = and %1, %2; 
             s = s + s1 +
                 get_ref() + " = ne " +
                 landExp->get_ref_if_possible() + ", 0\n"; 
             s2 = get_ref();
-            ++t_id;
+            alloc_ref();
             s = s + get_ref() + " = ne " +
                 eqExp->get_ref_if_possible() + ", 0\n";
             s3 = get_ref();
-            ++t_id;
+            alloc_ref();
             s = s + get_ref() + " = and " + s2 + ", " + s3 + "\n";
             t_val = to_string(atoi(landExp->t_val.data()) || atoi(eqExp->t_val.data()));
 
@@ -553,17 +575,17 @@ class LOrExpAST : public BaseAST {
             s1 = landExp->Dump();
 
             t_type = lorExp->t_type; // 没有考虑类型转换和检查
-            t_id = landExp->t_id + 1;
+            alloc_ref();
     // Koopa IR只支持按位或; a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = or %1, %2; 
             s = s + s1 +
                 get_ref() + " = ne " +
                 lorExp->get_ref_if_possible() + ", 0\n"; 
             s2 = get_ref();
-            ++t_id;
+            alloc_ref();
             s = s + get_ref() + " = ne " +
                 landExp->get_ref_if_possible() + ", 0\n";
             s3 = get_ref();
-            ++t_id;
+            alloc_ref();
             s = s + get_ref() + " = or " + s2 + ", " + s3 + "\n";
 
             t_val = to_string(atoi(lorExp->t_val.data()) || atoi(landExp->t_val.data()));

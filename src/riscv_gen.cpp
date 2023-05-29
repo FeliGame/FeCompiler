@@ -46,6 +46,11 @@ string alloc_reg()
 // 将直接数注册到寄存器中
 inline void save_reg(int32_t imm)
 {
+    if(imm == 0) {
+        reg_prev_prev = reg_prev;
+        reg_prev = "x0";
+        return;
+    }
     fout << "li\t" << alloc_reg() << ", " << imm << "\n";
 }
 
@@ -249,14 +254,11 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         else
         {
             try_save_reg(bin_inst);
-            fout << "slt\t"<< alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
-            fout << "sgt\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
-            string reg_lt = reg_prev_prev, reg_gt = reg_prev;
-            fout << "or\t" << alloc_reg() << ", " << reg_lt << ", " << reg_gt << "\n";
+            fout << "sub\t"<< alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
             fout << "seqz\t" << reg_prev << ", " << reg_prev << "\n";
         }
         break;
-    case KOOPA_RBO_NOT_EQ:
+    case KOOPA_RBO_NOT_EQ:  // riscv没有直接neq指令
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
             (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
@@ -265,7 +267,8 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         else
         {
             try_save_reg(bin_inst);
-            fout << "ne\t" << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
+            fout << "sub\t"<< alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
+            fout << "snez\t" << reg_prev << ", " << reg_prev << "\n";
         }
         break;
     case KOOPA_RBO_SUB:
