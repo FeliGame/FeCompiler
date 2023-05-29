@@ -361,7 +361,7 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
             (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
-            save_reg(l < r);
+            save_reg(l & r);
         }
         else
         {
@@ -373,7 +373,7 @@ void Visit(const koopa_raw_binary_t &bin_inst)
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
             (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
         {
-            save_reg(l < r);
+            save_reg(l | r);
         }
         else
         {

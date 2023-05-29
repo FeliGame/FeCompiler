@@ -41,9 +41,8 @@ Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
 RelativeOperator    (<=)|(>=)|(<)|(>)|(!=)|(==)
-LogicOperator       (&&)|("||")
 /* Add: Even -s can be ignored */
-RedundantNeg  ("--")*
+/* RedundantNeg  ("--")* */
 
 
 /* %%包围的部分是Flex/Bison的规则描述（词法分析、语法分析） */
@@ -53,13 +52,13 @@ RedundantNeg  ("--")*
 {WhiteSpace}    { /* 忽略, 不做任何操作 */ }
 {LineComment}   { /* 忽略, 不做任何操作 */ }
 {BlockComment}  { /* nothing to do */ }
-{RedundantNeg}  { /* nothing to do */ }
 
 "int"           { return INT; }
 "return"        { return RETURN; }
 
 {RelativeOperator} { yylval.str_val = new string(yytext); return RELOP; }
-{LogicOperator}    { yylval.str_val = new string(yytext); return LOGICOP; }
+"&&"            { yylval.str_val = new string(yytext); return LOGICAND; }
+"||"            { yylval.str_val = new string(yytext); return LOGICOR; }
 
 {Identifier}    { 
     // lexer transfers yylval(tokens) to parser

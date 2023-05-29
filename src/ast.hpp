@@ -529,7 +529,7 @@ class LAndExpAST : public BaseAST {
 
             t_type = landExp->t_type; // 没有考虑类型转换和检查
             alloc_ref();
-    // Koopa IR只支持按位与；a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = and %1, %2; 
+    // Koopa IR只支持按位与；a && b => %1 = ne a, 0; %2 = ne b, 0; %3 = and %1, %2; 
             s = s + s1 +
                 get_ref() + " = ne " +
                 landExp->get_ref_if_possible() + ", 0\n"; 
@@ -540,7 +540,7 @@ class LAndExpAST : public BaseAST {
             s3 = get_ref();
             alloc_ref();
             s = s + get_ref() + " = and " + s2 + ", " + s3 + "\n";
-            t_val = to_string(atoi(landExp->t_val.data()) || atoi(eqExp->t_val.data()));
+            t_val = to_string(atoi(landExp->t_val.data()) && atoi(eqExp->t_val.data()));
 
             break;
         default:
@@ -576,7 +576,7 @@ class LOrExpAST : public BaseAST {
 
             t_type = lorExp->t_type; // 没有考虑类型转换和检查
             alloc_ref();
-    // Koopa IR只支持按位或; a && b = %1 = ne a, 0; %2 = ne b, 0; %3 = or %1, %2; 
+    // Koopa IR只支持按位或; a || b => %1 = ne a, 0; %2 = ne b, 0; %3 = or %1, %2; 
             s = s + s1 +
                 get_ref() + " = ne " +
                 lorExp->get_ref_if_possible() + ", 0\n"; 
