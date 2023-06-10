@@ -66,7 +66,7 @@ using namespace std;
 // 注意 IDENT 和 INT_VAL 会返回 token 的值, 分别对应 str_val 和 int_val
 // str_val is a pointer type, we say that it's of IDENT
 %token INT RETURN
-%token <str_val> IDENT RELOP LOGICAND LOGICOR
+%token <str_val> IDENT RELOP EQOP LOGICAND LOGICOR
 %token <int_val> INT_VAL
 // %token <op_val> OP
 
@@ -296,7 +296,7 @@ EqExp
     ast->relExp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
-  | EqExp RELOP RelExp {
+  | EqExp EQOP RelExp {
     auto ast = new EqExpAST();
     ast->selection = 2;
     ast->eqExp = unique_ptr<BaseAST>($1);

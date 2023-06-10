@@ -40,7 +40,8 @@ Decimal       [1-9][0-9]*
 Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
-RelativeOperator    (<=)|(>=)|(<)|(>)|(!=)|(==)
+RelativeOperator    (<=)|(>=)|(<)|(>)
+EqualOperator       (!=)|(==)
 /* Add: Even -s can be ignored */
 /* RedundantNeg  ("--")* */
 
@@ -57,6 +58,7 @@ RelativeOperator    (<=)|(>=)|(<)|(>)|(!=)|(==)
 "return"        { return RETURN; }
 
 {RelativeOperator} { yylval.str_val = new string(yytext); return RELOP; }
+{EqualOperator} {yylval.str_val = new string(yytext); return EQOP;}
 "&&"            { yylval.str_val = new string(yytext); return LOGICAND; }
 "||"            { yylval.str_val = new string(yytext); return LOGICOR; }
 
