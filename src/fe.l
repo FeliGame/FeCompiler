@@ -42,8 +42,6 @@ Hexadecimal   0[xX][0-9a-fA-F]+
 
 RelativeOperator    (<=)|(>=)|(<)|(>)
 EqualOperator       (!=)|(==)
-/* Add: Even -s can be ignored */
-/* RedundantNeg  ("--")* */
 
 
 /* %%包围的部分是Flex/Bison的规则描述（词法分析、语法分析） */
@@ -58,9 +56,11 @@ EqualOperator       (!=)|(==)
 "return"        { return RETURN; }
 
 {RelativeOperator} { yylval.str_val = new string(yytext); return RELOP; }
-{EqualOperator} {yylval.str_val = new string(yytext); return EQOP;}
+{EqualOperator} { yylval.str_val = new string(yytext); return EQOP;}
 "&&"            { yylval.str_val = new string(yytext); return LOGICAND; }
 "||"            { yylval.str_val = new string(yytext); return LOGICOR; }
+
+"const" { yylval.str_val = new string(yytext); return CONST; }
 
 {Identifier}    { 
     // lexer transfers yylval(tokens) to parser

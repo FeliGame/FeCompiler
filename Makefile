@@ -23,8 +23,8 @@ ifeq ($(DEBUG), 0)
 CFLAGS += -O2
 CXXFLAGS += -O2
 else
-CFLAGS += -O0
-CXXFLAGS += -O0
+CFLAGS += -g
+CXXFLAGS += -g
 endif
 
 # Compilers
@@ -94,13 +94,13 @@ $(BUILD_DIR)/%.tab$(FB_EXT): $(SRC_DIR)/%.y
 	$(BISON) $(BFLAGS) -o $@ $<
 
 koopa: $(BUILD_DIR)/$(TARGET_EXEC)
-	$(BUILD_DIR)/$(TARGET_EXEC) -$@ test4.fe -o test4.$@
+	$(BUILD_DIR)/$(TARGET_EXEC) -$@ hello.fe -o hello.$@
 
 riscv: $(BUILD_DIR)/$(TARGET_EXEC)
-	$(BUILD_DIR)/$(TARGET_EXEC) -$@ test4.fe -o test4.$@
+	$(BUILD_DIR)/$(TARGET_EXEC) -$@ hello.fe -o hello.$@
 
 
-.PHONY: clean test1 test2
+.PHONY: clean
 
 test1:
 	autotest -koopa -s lv1 /root/compiler/FeCompiler

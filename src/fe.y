@@ -21,6 +21,7 @@ imports：此时代码段code_seg只能是JAVA
 #include "ast.hpp"
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 // 声明 lexer 函数和错误处理函数
 // C++11 unique_ptr: one ptr only reflects on one r-val; it destructs automatically.
@@ -52,68 +53,135 @@ using namespace std;
 //   int int_val;
 // }
 
-// def of ast, Lv1.3
 // str_val or int_val is the leaf node of ast
 %union {
   std::string *str_val;
-  // std::string *op_val;
   int int_val;
   BaseAST *ast_val;
 }
 
 // %token: <decl in %union, values>
 // lexer 返回的所有 终结符（即token） 类型的声明
-// 注意 IDENT 和 INT_VAL 会返回 token 的值, 分别对应 str_val 和 int_val
-// str_val is a pointer type, we say that it's of IDENT
-%token INT RETURN
+%token INT RETURN CONST
 %token <str_val> IDENT RELOP EQOP LOGICAND LOGICOR
 %token <int_val> INT_VAL
-// %token <op_val> OP
 
-// 非终结符的类型定义，ast_val的数据类型会被映射到右边的所有非终结符
-// str_val include these NonTerminal Symbols
-// %type can be seen as content type of str_val
-// Lv3.1
-%type <ast_val> FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp RelExp EqExp LAndExp LOrExp
+%type <ast_val> Decl ConstDecl BType ConstDefs ConstDef ConstInitVal VarDecl VarDef InitVal BlockItems BlockItem LVal ConstExp
+  FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp RelExp EqExp LAndExp LOrExp
 %type <int_val> Number
 %type <str_val> UnaryOp
 
 %%
 
-// 开始符, CompUnit ::= FuncDef, 大括号后声明了解析完成后 parser 要做的事情（SDT）
-// 之前我们定义了 FuncDef 会返回一个 str_val, 也就是字符串指针
-// 而 parser 一旦解析完 CompUnit, 就说明所有的 token 都被解析了, 即解析结束了
-// 此时我们应该把 FuncDef 返回的结果收集起来, 作为 AST 传给调用 parser 的函数
-// $1 指代规则里第一个符号的返回值, 也就是 FuncDef 的返回值
 CompUnit
   : FuncDef {
-    // Lv1.3，comp_unit is the ast root, no member creates it
-    // so you should make_unique to init comp_unit.
     auto comp_unit = make_unique<CompUnitAST>();
     comp_unit->func_def = unique_ptr<BaseAST>($1);
     ast = move(comp_unit);  // move()函数强制将左值转换为右值
   }
   ;
 
-// FuncDef ::= FuncType IDENT '(' ')' Block;
-// 我们这里可以直接写 '(' 和 ')', 因为之前在 lexer 里已经处理了单个字符的情况
-// 解析完成后, 把这些符号的结果收集起来, 然后拼成一个新的字符串, 作为结果返回
-// $$ 表示非终结符的返回值, 我们可以通过给这个符号赋值的方法来返回结果
-// 你可能会问, FuncType, IDENT 之类的结果已经是字符串指针了
-// 为什么还要用 unique_ptr 接住它们, 然后再解引用, 把它们拼成另一个字符串指针呢
-// 因为所有的字符串指针都是我们 new 出来的, new 出来的内存一定要 delete
-// 否则会发生内存泄漏, 而 unique_ptr 这种智能指针可以自动帮我们 delete
-// 虽然此处你看不出用 unique_ptr 和手动 delete 的区别, 但当我们定义了 AST 之后
-// 这种写法会省下很多内存管理的负担
+Decl
+  : ConstDecl {
+    auto ast = new DeclAST();
+    ast->selection = 1;
+    ast->const_decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | VarDecl {
+    auto ast = new DeclAST();
+    ast->selection = 2;
+    ast->var_decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+ConstDecl
+  : CONST BType ConstDefs ';' {
+    auto ast = new ConstDeclAST();
+    ast->b_type = unique_ptr<BaseAST>($2);
+    ast->const_defs = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+ConstDefs
+  : ConstDefs ',' ConstDef {
+    auto ast = new ConstDefsAST();
+    ast->selection = 1;
+    ast->const_defs = unique_ptr<BaseAST>($1);
+    ast->const_def = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | ConstDef {
+    auto ast = new ConstDefsAST();
+    ast->selection = 2;
+    ast->const_def = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+BType
+  : INT {
+    auto ast = new BTypeAST();
+    ast->type = "int";
+    $$ = ast;
+  }
+  ;
+
+ConstDef
+  : IDENT '=' ConstInitVal {
+    auto ast = new ConstDefAST();
+    ast->ident = *unique_ptr<string>($1);
+    ast->const_init_val = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+ConstInitVal
+  : ConstExp {
+    auto ast = new ConstInitValAST();
+    ast->const_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+VarDecl 
+  : BType VarDef ';' {
+    auto ast = new VarDeclAST();
+    ast->selection = 1;
+    ast->b_type = unique_ptr<BaseAST>($1);
+    ast->var_def = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  | BType VarDef ',' VarDef ';' {
+    auto ast = new VarDeclAST();
+    ast->selection = 2;
+    ast->b_type = unique_ptr<BaseAST>($1);
+    ast->var_def = unique_ptr<BaseAST>($2);
+    ast->var_def1 = unique_ptr<BaseAST>($4);
+    $$ = ast;
+  }
+  ;
+
+VarDef
+  : IDENT {
+    auto ast = new VarDefAST();
+    ast->ident = *unique_ptr<string>($1);
+    $$ = ast;
+  }
+  ;
+
+InitVal
+  : Exp {
+    auto ast = new InitValAST();
+    ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
 FuncDef
   : FuncType IDENT '(' ')' Block {
-    // Lv 1.2(just output src identically)
-    // auto type = unique_ptr<string>($1);
-    // auto ident = unique_ptr<string>($2);
-    // auto block = unique_ptr<string>($5);
-    // $$ = new string(*type + " " + *ident + "() " + *block);
-    
-    // Lv1.3
     auto ast = new FuncDefAST();
     ast->func_type = unique_ptr<BaseAST>($1);
     ast->ident = *unique_ptr<string>($2);
@@ -122,7 +190,6 @@ FuncDef
   }
   ;
 
-// Terminal Symbols, they are leaf nodes
 FuncType
   : INT {
     auto ast = new FuncTypeAST();
@@ -132,43 +199,94 @@ FuncType
   ;
 
 Block
-  : '{' Stmt '}' {
+  : '{' '}' {
+    // do nothing
+  }
+  | '{' BlockItems '}' {
     auto ast = new BlockAST();
-    ast->stmt = unique_ptr<BaseAST>($2);
+    ast->block_items = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  ;
+
+// 左递归，方便yacc的LR分析
+BlockItems
+  : BlockItems BlockItem {
+    auto ast = new BlockItemsAST();
+    ast->selection = 1;
+    ast->block_items = unique_ptr<BaseAST>($1);
+    ast->block_item = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  | BlockItem {
+    auto ast = new BlockItemsAST();
+    ast->selection = 2;
+    ast->block_item = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+BlockItem
+  : Decl {
+    auto ast = new BlockItemAST();
+    ast->selection = 1;
+    ast->decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | Stmt {
+    auto ast = new BlockItemAST();
+    ast->selection = 2;
+    ast->stmt = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
 
 Stmt
-  // : RETURN Number ';' {
-  : RETURN Exp ';' {
+  : LVal '=' Exp ';' {
     auto ast = new StmtAST();
-    // ast->statement = to_string($2);
+    ast->selection = 1;
+    ast->l_val = unique_ptr<BaseAST>($1);
+    ast->exp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | RETURN Exp ';' {
+    auto ast = new StmtAST();
+    ast->selection = 2;
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
   ;
 
 Exp         
-  : UnaryExp {
-    auto ast = new ExpAST();
-    ast->selection = 1;
-    ast->unaryExp = unique_ptr<BaseAST>($1);
-    $$ = ast;
-  }
-  | AddExp {
-    auto ast = new ExpAST();
-    ast->selection = 2;
-    ast->addExp = unique_ptr<BaseAST>($1);
-    $$ = ast;
-  }
-  | LOrExp {
+  : 
+  // UnaryExp {
+  //   auto ast = new ExpAST();
+  //   ast->selection = 1;
+  //   ast->unaryExp = unique_ptr<BaseAST>($1);
+  //   $$ = ast;
+  // }
+  // | AddExp {
+  //   auto ast = new ExpAST();
+  //   ast->selection = 2;
+  //   ast->addExp = unique_ptr<BaseAST>($1);
+  //   $$ = ast;
+  // }
+  // | 
+  LOrExp {
     auto ast = new ExpAST();
     ast->selection = 3;
     ast->lorExp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
 ;
+
+LVal
+  : IDENT {
+    auto ast = new LValAST();
+    ast->ident = *unique_ptr<string>($1);
+    $$ = ast;
+  }
+  ;
 
 PrimaryExp  
   : '(' Exp ')' {
@@ -177,9 +295,15 @@ PrimaryExp
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
-  | Number {
+  | LVal {
     auto ast = new PrimaryExpAST();
     ast->selection = 2;
+    ast->l_val = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | Number {
+    auto ast = new PrimaryExpAST();
+    ast->selection = 3;
     ast->number = $1; // it's of int32
     $$ = ast;
   }
@@ -337,6 +461,12 @@ LOrExp
     $$ = ast;
   }
 ;
+
+ConstExp
+  : Exp {
+    auto ast = new ConstExpAST();
+    ast->exp = unique_ptr<BaseAST>($1);
+  }
 %%
 
 // 定义错误处理函数, 其中第二个参数是错误信息
