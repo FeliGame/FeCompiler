@@ -3,10 +3,17 @@
 #include <cassert>
 #include <iostream>
 #include <fstream>
+#include <stack>
 
 using namespace std;
 
 fstream fout;
+
+int st_len;  // 维护每个函数的栈空间长度（16字节对齐）
+
+void get_current_st_len(const koopa_raw_slice_t & func) {
+    // 扫描指令行数
+}
 
 string reg_prev_prev = ""; // 上上个用到的寄存器
 string reg_prev = "";      // 上一个用到的寄存器
@@ -226,6 +233,10 @@ void Visit(const koopa_raw_value_t &value)
     //     Visit(kind.data.call);
     //     break;
     /// Function return.
+    case KOOPA_RVT_ALLOC:
+    cerr << "Undefined alloc\n";
+        // Visit(kind.data.global_alloc);
+        break;
     case KOOPA_RVT_RETURN:
         Visit(kind.data.ret);
         break;

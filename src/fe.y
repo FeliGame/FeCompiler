@@ -66,7 +66,7 @@ using namespace std;
 %token <str_val> IDENT RELOP EQOP LOGICAND LOGICOR
 %token <int_val> INT_VAL
 
-%type <ast_val> Decl ConstDecl BType ConstDefs ConstDef ConstInitVal VarDecl VarDef InitVal BlockItems BlockItem LVal ConstExp
+%type <ast_val> Decl ConstDecl BType ConstDefs ConstDef ConstInitVal VarDecl VarDefs VarDef InitVal BlockItems BlockItem LVal ConstExp
   FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp RelExp EqExp LAndExp LOrExp
 %type <int_val> Number
 %type <str_val> UnaryOp
@@ -147,19 +147,26 @@ ConstInitVal
   ;
 
 VarDecl 
-  : BType VarDef ';' {
+  : BType VarDefs ';' {
     auto ast = new VarDeclAST();
-    ast->selection = 1;
     ast->b_type = unique_ptr<BaseAST>($1);
-    ast->var_def = unique_ptr<BaseAST>($2);
+    ast->var_defs = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
-  | BType VarDef ',' VarDef ';' {
-    auto ast = new VarDeclAST();
+  ;
+
+VarDefs
+  : VarDefs ',' VarDef {
+    auto ast = new VarDefsAST();
+    ast->selection = 1;
+    ast->var_defs = unique_ptr<BaseAST>($1);
+    ast->var_def = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  | VarDef {
+    auto ast = new VarDefsAST();
     ast->selection = 2;
-    ast->b_type = unique_ptr<BaseAST>($1);
-    ast->var_def = unique_ptr<BaseAST>($2);
-    ast->var_def1 = unique_ptr<BaseAST>($4);
+    ast->var_def = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
@@ -167,7 +174,15 @@ VarDecl
 VarDef
   : IDENT {
     auto ast = new VarDefAST();
+    ast->selection = 1;
     ast->ident = *unique_ptr<string>($1);
+    $$ = ast;
+  }
+  | IDENT '=' InitVal {
+    auto ast = new VarDefAST();
+    ast->selection = 2;
+    ast->ident = *unique_ptr<string>($1);
+    ast->init_val = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;

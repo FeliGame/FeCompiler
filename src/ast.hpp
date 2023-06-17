@@ -22,15 +22,15 @@ class BaseAST
 public:
     // 继承属性
     int32_t depth = 0; // AST树深度（根节点深度为0）
-    int t_type;  // 【表达式】计算结果的类型
+    int t_type;        // 【表达式】计算结果的类型
     int blockId;       // 块ID
-    string ident;       //  【变量/常量名】
 
     // 综合属性
     int32_t t_id = -1; // 【表达式】计算结果的变量名序号
     // 【可优化】如果一个式子规约到出现第一条IR时，此后无需再计算t_val值，除非想优化
     string r_val;         // 【表达式】计算结果的右值，主要是因为部分指令对值没有影响，因此需要通过它来继承
     bool isConst = false; // 是否为常量或字面量，可以进行【常量合并】优化
+    string ident;         //  【变量/常量名】
 
     virtual ~BaseAST() = default;
     // Dump translates the AST into Koopa IR string
@@ -43,6 +43,7 @@ public:
         r_val = child->r_val;
         t_type = child->t_type;
         isConst = child->isConst;
+        ident = child->ident;
     }
 
     // 输出AST
@@ -89,7 +90,25 @@ public:
     // 若为常量或字面量，返回值；否则返回临时变量名ref
     inline string get_val_if_possible()
     {
-        return (isConst ? r_val : get_ref());
+        // 常量直接返回
+        if (isConst)
+            return r_val;
+        if (t_id == -1) {
+            cerr << "Unallocated pointer...\n";
+            assert(false);
+        }
+        // 都不是，只能返回临时缓冲内容
+        return get_ref();
+    }
+
+    // exp代表的值是指针
+    inline string loadIfisPointer()
+    {
+        if(!isConst && findInSBT(blockId, ident)) {
+            alloc_ref();
+            return get_ref() + " = load @" + ident + "\n";
+        }
+        return "";
     }
 
     string get_koopa_op(string op)
@@ -184,13 +203,13 @@ public:
         isConst = false; // 声明语句不是右值
         b_type->blockId = const_defs->blockId = blockId;
         string s = b_type->Dump();
-        const_defs->t_type = b_type->t_type;    // 继承（左->右）
+        const_defs->t_type = b_type->t_type; // 继承（左->右）
         s += const_defs->Dump();
         return s;
     }
 };
 /*
- 
+
 */
 
 class ConstDefsAST : public BaseAST
@@ -208,7 +227,7 @@ public:
         switch (selection)
         {
         case 1:
-            const_defs->t_type = const_def->t_type = t_type;    // 继承（父->子）
+            const_defs->t_type = const_def->t_type = t_type; // 继承（父->子）
             const_defs->blockId = const_def->blockId = blockId;
             s = const_defs->Dump() + const_def->Dump();
             break;
@@ -248,10 +267,10 @@ public:
     {
         debug("const_def", const_init_val);
         string s;
-        const_init_val->t_type = t_type;    // 继承（父->子）
+        const_init_val->t_type = t_type; // 继承（父->子）
         const_init_val->blockId = blockId;
         s = const_init_val->Dump();
-        addConstToSBT(blockId, ident, atoi(const_init_val->r_val.data()));  // t_type已经从父亲那里继承
+        addConstToSBT(blockId, ident, atoi(const_init_val->r_val.data())); // t_type已经从父亲那里继承
         // 常量本质上和字面量没有区别，可以直接参与运算
         syncProps(const_init_val);
         return s;
@@ -267,7 +286,7 @@ public:
     string Dump() override
     {
         debug("const_init_val", const_exp);
-        const_exp->t_type = t_type;    // 继承（父->子）
+        const_exp->t_type = t_type; // 继承（父->子）
         const_exp->blockId = blockId;
         string s = const_exp->Dump();
         syncProps(const_exp);
@@ -279,17 +298,49 @@ public:
 class VarDeclAST : public BaseAST
 {
 public:
-    int selection;
     unique_ptr<BaseAST> b_type;
-    unique_ptr<BaseAST> var_def;
-    unique_ptr<BaseAST> var_def1;
+    unique_ptr<BaseAST> var_defs;
 
     string Dump() override
     {
-        debug("var_decl", b_type);
-        debug("var_decl", var_def);
-        debug("var_decl", var_def1);
-        return "";
+        debug("var_decl", var_defs);
+        isConst = false; // 声明语句不是右值
+        b_type->blockId = var_defs->blockId = blockId;
+        string s = b_type->Dump();
+        var_defs->t_type = b_type->t_type; // 继承（左->右）
+        s += var_defs->Dump();
+        return s;
+    }
+};
+
+class VarDefsAST : public BaseAST
+{
+public:
+    int selection;
+    unique_ptr<BaseAST> var_defs;
+    unique_ptr<BaseAST> var_def;
+
+    string Dump() override
+    {
+        debug("var_defs", var_def);
+        isConst = false; // 定义语句不是右值
+        string s;
+        switch (selection)
+        {
+        case 1:
+            var_defs->t_type = var_def->t_type = t_type; // 继承（父->子）
+            var_defs->blockId = var_def->blockId = blockId;
+            s = var_defs->Dump() + var_def->Dump();
+            break;
+        case 2:
+            var_def->t_type = t_type; // 继承（父->子）
+            var_def->blockId = blockId;
+            s = var_def->Dump();
+            break;
+        default:
+            assert(false);
+        }
+        return s;
     }
 };
 
@@ -297,10 +348,26 @@ public:
 class VarDefAST : public BaseAST
 {
 public:
+    int selection;
+    unique_ptr<BaseAST> init_val;
+
     string Dump() override
     {
         debug("var_def", nullptr);
-        return "";
+        addVarToSBT(blockId, ident);               // 添加变量声明
+        string s = "@" + ident + " = alloc i32\n"; // 【暂时只支持int类型变量分配】
+        if (selection == 1)
+        {
+            s += ("store 0, @" + ident + "\n");
+        }
+        if (selection == 2)
+        {
+            debug("var_def", init_val);
+            init_val->blockId = blockId;
+            s += (init_val->Dump() + init_val->loadIfisPointer());
+            s += ("store " + init_val->get_val_if_possible() + ", @" + ident + "\n");
+        }
+        return s;
     }
 };
 
@@ -313,7 +380,10 @@ public:
     string Dump() override
     {
         debug("init_val", exp);
-        return "";
+        exp->blockId = blockId;
+        string s = exp->Dump();
+        syncProps(exp);
+        return s;
     }
 };
 
@@ -327,7 +397,7 @@ public:
     {
         debug("func_def", func_type);
         debug("func_def", block);
-        block->blockId = blockId;   // 父块的id传下去（C语言中，由于不允许嵌套函数，所以FuncDef->blockId = 0）
+        block->blockId = blockId; // 父块的id传下去（C语言中，由于不允许嵌套函数，所以FuncDef->blockId = 0）
         string s = "fun @" + ident + "(): " + func_type->Dump() + " {\n%entry:\n" + block->Dump() + "}";
         return s;
     }
@@ -356,7 +426,7 @@ public:
     string Dump() override
     {
         debug("block", block_items);
-        blockId = alloc_block_id(blockId);  // 传入参数为父块id，从这里转变成了该节点本身id
+        blockId = alloc_block_id(blockId); // 传入参数为父块id，从这里转变成了该节点本身id
         block_items->blockId = blockId;
         string s = block_items->Dump(); // 父->子
         return s;
@@ -365,7 +435,7 @@ public:
 
 class BlockItemsAST : public BaseAST
 {
-    public:
+public:
     int selection;
     unique_ptr<BaseAST> block_item;
     unique_ptr<BaseAST> block_items;
@@ -377,11 +447,11 @@ class BlockItemsAST : public BaseAST
         switch (selection)
         {
         case 1:
-            block_items->blockId = block_item->blockId = blockId;    // 父->子
+            block_items->blockId = block_item->blockId = blockId; // 父->子
             s = block_items->Dump() + block_item->Dump();
             break;
         case 2:
-            block_item->blockId = blockId;    // 父->子
+            block_item->blockId = blockId; // 父->子
             s = block_item->Dump();
             break;
         default:
@@ -406,13 +476,13 @@ public:
         {
         case 1:
             debug("block_item", decl);
-            decl->blockId = blockId;    // 父->子
+            decl->blockId = blockId; // 父->子
             s = decl->Dump();
             syncProps(decl);
             break;
         case 2:
             debug("block_item", stmt);
-            stmt->blockId = blockId;    // 父->子
+            stmt->blockId = blockId; // 父->子
             s = stmt->Dump();
             syncProps(stmt);
             break;
@@ -438,16 +508,29 @@ public:
         {
         case 1:
             debug("stmt", l_val);
-            l_val->blockId = blockId;    // 父->子
-            s = l_val->Dump() + "=" + exp->Dump();
-            syncProps(exp); // 【待改进】l_val的值如何更新？
+            l_val->blockId = exp->blockId = blockId; // 父->子
+            s = l_val->Dump();
+            // 字面量/常量不能作为左值
+            if (l_val->isConst)
+            {
+                cerr << "Syntax Error: Const val isn't a left val!\n";
+                assert(false);
+            }
+            // 变量
+            else
+            {
+                string l_id = l_val->ident; // 左值变量名，在syncProps中ident被更新为右值变量，因此要先缓存！
+                s += exp->Dump() + exp->loadIfisPointer();   // 计算右值的结果
+                s += ("store " + exp->get_val_if_possible() + ", @" + l_id  + "\n");
+            }
             break;
 
         case 2:
-            exp->blockId = blockId;    // 父->子
+            exp->blockId = blockId; // 父->子
             s = exp->Dump();
-            syncProps(exp);
-            s = s + "ret " + exp->get_val_if_possible() + "\n"; // 指令行
+            // 返回的符号若为变量指针，则需要
+            s += exp->loadIfisPointer();
+            s += ("ret " + exp->get_val_if_possible() + "\n"); // 指令行
             break;
         default:
             assert(false);
@@ -486,7 +569,7 @@ public:
         //     break;
         case 3:
             debug("exp", lorExp);
-            lorExp->blockId = blockId;    // 父->子
+            lorExp->blockId = blockId; // 父->子
             lorExp->depth = depth + 1;
             // 值不发生改变，因此原样复制
             s = lorExp->Dump();
@@ -506,11 +589,14 @@ public:
     string Dump() override
     {
         debug("l_val", nullptr);
-        //  判断是否为常量标签，如果是，则可以合并常量
-        if(findConstInSBT(blockId, ident)) {
-            isConst = true;
-            r_val = getConstValFromSBT(blockId, ident);
-            cerr << "Lval is CONST, val = "<< r_val << "\n";
+        auto node = getNodeFromSBT(blockId, ident);
+        isConst = node.isConst; //  判断是否为常量，如果是，则可以在规约时合并常量
+        if (isConst)
+        {
+            stringstream ss;
+            ss << node.const_val;
+            r_val = ss.str();
+            cerr << "r_val = " << r_val << endl;
         }
         return "";
     }
@@ -536,13 +622,13 @@ public:
         {
         case 1:
             debug("primary", exp);
-            exp->blockId = blockId;    // 父->子
+            exp->blockId = blockId; // 父->子
             s = exp->Dump();
             syncProps(exp);
             break;
         case 2:
             debug("primary", l_val);
-            l_val->blockId = blockId;    // 父->子
+            l_val->blockId = blockId; // 父->子
             s = l_val->Dump();
             syncProps(l_val);
             break;
@@ -579,20 +665,20 @@ public:
         {
         case 1:
             debug("unary", primaryExp);
-            primaryExp->blockId = blockId;    // 父->子
+            primaryExp->blockId = blockId; // 父->子
             s = primaryExp->Dump();
             syncProps(primaryExp);
             break;
         case 2:
             debug("unary", unaryExp);
-            unaryExp->blockId = blockId;    // 父->子
-            s = unaryExp->Dump(); // 先计算子表达式的值
+            unaryExp->blockId = blockId; // 父->子
+            s = unaryExp->Dump();        // 先计算子表达式的值
             if (unaryOp == "!")
             {
                 if (!unaryExp->isConst)
                 {
                     alloc_ref(); // 分配新临时变量
-                    s = s + get_ref() + " = eq " + unaryExp->get_val_if_possible() + ", 0\n";
+                    s = s + unaryExp->loadIfisPointer() + get_ref() + " = eq " + unaryExp->get_val_if_possible() + ", 0\n";
                 }
                 r_val = to_string(!atoi(unaryExp->r_val.data()));
             }
@@ -601,7 +687,7 @@ public:
                 if (!unaryExp->isConst)
                 {
                     alloc_ref(); // 分配新临时变量
-                    s = s + get_ref() + " = sub 0, " + unaryExp->get_val_if_possible() + "\n";
+                    s = s + unaryExp->loadIfisPointer() + get_ref() + " = sub 0, " + unaryExp->get_val_if_possible() + "\n";
                 }
                 r_val = to_string(-atoi(unaryExp->r_val.data()));
             }
@@ -610,8 +696,9 @@ public:
                 t_id = unaryExp->t_id;
                 r_val = unaryExp->r_val;
             }
-            else {
-                cerr << "Parsing Error: Undefined unary op: " << unaryOp << endl ;
+            else
+            {
+                cerr << "Parsing Error: Undefined unary op: " << unaryOp << endl;
                 assert(false);
             }
             isConst = unaryExp->isConst;
@@ -644,15 +731,15 @@ public:
         {
         case 1:
             // 值不发生改变，因此原样复制
-            unaryExp->blockId = blockId;    // 父->子
+            unaryExp->blockId = blockId; // 父->子
             s = unaryExp->Dump();
             syncProps(unaryExp);
             break;
         case 2:
             debug("mul", mulExp);
-            mulExp->blockId = unaryExp->blockId = blockId;    // 父->子
-            s = mulExp->Dump();                            // 先求出多元式（左结合）
-            s1 = unaryExp->Dump();                         // 然后求出一元式
+            mulExp->blockId = unaryExp->blockId = blockId; // 父->子
+            s = mulExp->Dump() + mulExp->loadIfisPointer();                            // 先求出多元式（左结合）
+            s1 = unaryExp->Dump() + unaryExp->loadIfisPointer();                         // 然后求出一元式
             isConst = mulExp->isConst & unaryExp->isConst; // 仅当两个右值的运算结果才是右值
             t_type = mulExp->t_type;                       // 没有考虑类型转换和检查
             if (!isConst)
@@ -706,15 +793,15 @@ public:
         {
         case 1:
             // 值不发生改变，因此原样复制
-            mulExp->blockId = blockId;    // 父->子
+            mulExp->blockId = blockId; // 父->子
             s = mulExp->Dump();
             syncProps(mulExp);
             break;
         case 2:
             debug("add", addExp);
-            addExp->blockId = mulExp->blockId = blockId;    // 父->子
-            s = addExp->Dump();
-            s1 = mulExp->Dump();
+            addExp->blockId = mulExp->blockId = blockId; // 父->子
+            s = addExp->Dump() + addExp->loadIfisPointer();
+            s1 = mulExp->Dump() + mulExp->loadIfisPointer();
             isConst = addExp->isConst & mulExp->isConst; // 仅当两个右值的运算结果才是右值
             t_type = addExp->t_type;                     // 没有考虑类型转换和检查
 
@@ -764,15 +851,15 @@ public:
         {
         case 1:
             // 值不发生改变，因此原样复制
-            addExp->blockId = blockId;    // 父->子
+            addExp->blockId = blockId; // 父->子
             s = addExp->Dump();
             syncProps(addExp);
             break;
         case 2:
             debug("rel", relExp);
-            relExp->blockId = addExp->blockId = blockId;    // 父->子
-            s = relExp->Dump();
-            s1 = addExp->Dump();
+            relExp->blockId = addExp->blockId = blockId; // 父->子
+            s = relExp->Dump() + relExp->loadIfisPointer();
+            s1 = addExp->Dump() + addExp->loadIfisPointer();
             isConst = relExp->isConst & addExp->isConst; // 仅当两个右值的运算结果才是右值
             t_type = relExp->t_type;                     // 没有考虑类型转换和检查
 
@@ -830,15 +917,15 @@ public:
         {
         case 1:
             // 值不发生改变，因此原样复制
-            relExp->blockId = blockId;    // 父->子
+            relExp->blockId = blockId; // 父->子
             s = relExp->Dump();
             syncProps(relExp);
             break;
         case 2:
             debug("eq", eqExp);
-            eqExp->blockId = relExp->blockId = blockId;    // 父->子
-            s = eqExp->Dump();
-            s1 = relExp->Dump();
+            eqExp->blockId = relExp->blockId = blockId; // 父->子
+            s = eqExp->Dump() + eqExp->loadIfisPointer();
+            s1 = relExp->Dump() + relExp->loadIfisPointer();
             isConst = eqExp->isConst & relExp->isConst; // 仅当两个右值的运算结果才是右值
             t_type = eqExp->t_type;                     // 没有考虑类型转换和检查
             if (!isConst)
@@ -894,8 +981,8 @@ public:
         case 2:
             debug("land", landExp);
             landExp->blockId = eqExp->blockId = blockId;
-            s = landExp->Dump();
-            s1 = eqExp->Dump();
+            s = landExp->Dump() + landExp->loadIfisPointer();
+            s1 = eqExp->Dump() + eqExp->loadIfisPointer();
             isConst = landExp->isConst & eqExp->isConst; // 仅当两个右值的运算结果才是右值
             t_type = landExp->t_type;                    // 没有考虑类型转换和检查
 
@@ -951,8 +1038,8 @@ public:
         case 2:
             debug("lor", lorExp);
             lorExp->blockId = landExp->blockId = blockId;
-            s = lorExp->Dump();
-            s1 = landExp->Dump();
+            s = lorExp->Dump() + lorExp->loadIfisPointer();
+            s1 = landExp->Dump() + landExp->loadIfisPointer();
             isConst = lorExp->isConst & landExp->isConst;
             t_type = lorExp->t_type; // 没有考虑类型转换和检查
 
