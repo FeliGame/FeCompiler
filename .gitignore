@@ -3,4 +3,5 @@
 *.riscv
 src/koopa.h
 .vscode
+.DS_Store
 build
