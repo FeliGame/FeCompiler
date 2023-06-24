@@ -8,6 +8,7 @@
 #include "ast.hpp"
 #include "koopa.h"
 #include "koopavisitor.hpp"
+#include <time.h>
 
 using namespace std;
 
@@ -18,18 +19,20 @@ using namespace std;
 // 看起来会很烦人, 于是干脆采用这种看起来 dirty 但实际很有效的手段
 extern FILE *yyin;                            // in fe.tab.hpp generated
 extern int yyparse(unique_ptr<BaseAST> &ast); // in parser generated
-const char* outFilePath;
+const char *outFilePath;
+bool debugAutotest = false; // 是否输出autotest下的内容到本层级文件夹
 
 // 调用 parser 函数, parser 函数会进一步调用 lexer 解析输入文件的
 unique_ptr<BaseAST> ast;
 
-void writeToFile(string content) {
+void writeToFile(string content, const char *path)
+{
     // 输出到文件
     fstream fout;
-    fout.open(outFilePath, ios_base::out);
+    fout.open(path, ios_base::out);
     if (!fout.is_open())
     {
-        cerr << "Failed to open " << outFilePath << endl;
+        cerr << "Failed to open " << path << endl;
     }
     else
     {
@@ -47,7 +50,8 @@ string GenerateKoopaIR()
     return koopa_str;
 }
 
-void GenerateRISCVFile(string koopaIR) {
+void GenerateRISCVFile(string koopaIR)
+{
     cout << "Generating RISCV(raw program) ...\n";
 
     // 将KoopaIR字符串解析为KoopaIR程序
@@ -66,6 +70,12 @@ void GenerateRISCVFile(string koopaIR) {
     // ...
     scanStackSize(koopaIR);
     VisitProgram(raw, outFilePath);
+    if (debugAutotest)
+    {
+        stringstream ss;
+        ss << time(nullptr);
+        VisitProgram(raw, (ss.str() + ".riscv").data()); // debug autotest
+    }
     cout << "SUCCESS!\n";
 
     // 处理完成, 释放 raw program builder 占用的内存
@@ -91,11 +101,16 @@ int main(int argc, const char *argv[])
     assert(!ret);
 
     string ir = GenerateKoopaIR();
-    if(!strcmp(mode, "-koopa")) writeToFile(ir);
-
-    else if(!strcmp(mode, "-riscv")) GenerateRISCVFile(ir);
-    // writeToFile(riscv);
-
+    if (debugAutotest)
+    {
+        stringstream ss;
+        ss << time(nullptr);
+        writeToFile(ir, (ss.str() + ".koopa").data());
+    }
+    if (!strcmp(mode, "-koopa"))
+        writeToFile(ir, outFilePath);
+    else if (!strcmp(mode, "-riscv"))
+        GenerateRISCVFile(ir);
 
     return 0;
 }

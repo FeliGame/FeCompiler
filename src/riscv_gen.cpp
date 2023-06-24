@@ -91,12 +91,13 @@ void try_save_reg(const koopa_raw_binary_t &bin_inst)
     reg_r = reg_prev;
 }
 
-// @变量->栈位置的映射
+// 变量->栈位置的映射
 unordered_map<string, int> id_map;
 
 inline int getStackPos(const koopa_raw_value_t &value)
 {
     string value_name;
+    // %开头的变量没有value->name，使用value自身十六进制代号命名
     if (value->name == nullptr)
     {
         stringstream ss;
@@ -104,7 +105,6 @@ inline int getStackPos(const koopa_raw_value_t &value)
         // fout << "allocing" << ss.str();
         value_name = ss.str();
     } else value_name = value->name;
-    // @开头的变量
     if (id_map.count(value_name))
     {
         // fout << "existing name: " << value_name << " " << id_map[value_name] << " ";
@@ -379,19 +379,6 @@ void VisitBin(const koopa_raw_binary_t &bin_inst)
             fout << "snez t0, t0\n";
         }
         break;
-    case KOOPA_RBO_SUB:
-        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
-            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
-        {
-            save_reg(l - r);
-        }
-        else
-        {
-            try_save_reg(bin_inst);
-            // fout << "sub " << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
-            fout << "sub t0, t0, t1\n";
-        }
-        break;
     case KOOPA_RBO_ADD:
         // 二元加法（一元的正号已在语义分析阶段过滤）
         if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
@@ -404,6 +391,19 @@ void VisitBin(const koopa_raw_binary_t &bin_inst)
             try_save_reg(bin_inst);
             // fout << "add " << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
             fout << "add t0, t0, t1\n";
+        }
+        break;
+    case KOOPA_RBO_SUB:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l - r);
+        }
+        else
+        {
+            try_save_reg(bin_inst);
+            // fout << "sub " << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
+            fout << "sub t0, t0, t1\n";
         }
         break;
     case KOOPA_RBO_MUL: // 二元乘法
@@ -470,6 +470,18 @@ void VisitBin(const koopa_raw_binary_t &bin_inst)
             try_save_reg(bin_inst);
             // fout << "slt " << alloc_reg() << ", " << reg_l << ", " << reg_r << "\n";
             fout << "slt t0, t0, t1\n";
+        }
+        break;
+    case KOOPA_RBO_MOD:
+        if ((bin_inst.lhs->kind.tag == KOOPA_RVT_INTEGER) &&
+            (bin_inst.rhs->kind.tag == KOOPA_RVT_INTEGER))
+        {
+            save_reg(l & r);
+        }
+        else
+        {
+            try_save_reg(bin_inst);
+            fout << "rem t0, t0, t1\n";
         }
         break;
     case KOOPA_RBO_AND:
