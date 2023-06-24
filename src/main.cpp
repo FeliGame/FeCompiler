@@ -64,7 +64,8 @@ void GenerateRISCVFile(string koopaIR) {
 
     // 处理 raw program
     // ...
-    Visit(raw, outFilePath);
+    scanStackSize(koopaIR);
+    VisitProgram(raw, outFilePath);
     cout << "SUCCESS!\n";
 
     // 处理完成, 释放 raw program builder 占用的内存
