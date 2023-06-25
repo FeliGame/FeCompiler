@@ -216,9 +216,13 @@ FuncType
 Block
   : '{' '}' {
     // do nothing
+    auto ast = new BlockAST();
+    ast->isNull = true;
+    $$ = ast;
   }
   | '{' BlockItems '}' {
     auto ast = new BlockAST();
+    ast->isNull = false;
     ast->block_items = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
@@ -264,12 +268,36 @@ Stmt
     ast->exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
-  | RETURN Exp ';' {
+  | Exp ';' {
     auto ast = new StmtAST();
     ast->selection = 2;
+    ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | ';' {
+    auto ast = new StmtAST();
+    ast->selection = 0;
+    $$ = ast;
+  }
+  | Block {
+    auto ast = new StmtAST();
+    ast->selection = 3;
+    ast->block = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | RETURN ';' {
+    auto ast = new StmtAST();
+    ast->selection = 0;
+    $$ = ast;
+  }
+  | RETURN Exp ';' {
+    auto ast = new StmtAST();
+    ast->selection = 4;
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
+  
+  
   ;
 
 Exp         

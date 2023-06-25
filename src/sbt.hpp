@@ -11,6 +11,7 @@ using namespace std;
 
 // 以下常量规定了Fe语言类型所使用的内置类型关键字
 const static string FE_TYPENAME_INT = "int";
+static string foundNameId;  // 变量赋值时找到的左值nameId
 
 const static int WIDTH_UNIT = 4; // 整型宽度单位
 
@@ -88,7 +89,9 @@ public:
 };
 
 static vector<unordered_map<string, SBTNode> *> SBT;              // 行对应Block，哈希键：常量名
-static bool findInSBT(int blockId, string name);                  // 用于检查是否某个名称是否被定义过
+// ast.hpp调用，检查某个ident名是否在块路径中存在
+static bool findPureNameInSBT(int blockId, string pureName);
+static bool findInSBT(int blockId, string name, bool findParent);                  // 用于检查是否某个名称是否被定义过
 static void addConstToSBT(int blockId, string name, int initVal); // 声明常量时使用
 static void addVarToSBT(int blockId, string name);                // 声明变量时使用
 static SBTNode& getNodeFromSBT(int blockId, string name);            // 读取常量值
@@ -96,6 +99,21 @@ static SBTNode& getNodeFromSBT(int blockId, string name);            // 读取�
 static int global_block_id = 0;                                 // 块id计数器，每个块的id都不同
 inline static void alloc_block(int blockId, int parentBlockId); // 为blockId分配所需的各类块空间
 inline static int alloc_block_id(int parentBlockId);            // 分配产生一个唯一的blockId，并分配空间
+inline static string getNameId(int blockId, string name);       // 将名字和blockId缝合
+inline static string truncIdFromName(string nameId);            // 将缝合的Name_BlockId分离出Name来
+
+inline static string getNameId(int blockId, string name) {
+    stringstream ss;
+    ss << blockId;
+    return name + "_" + ss.str();
+}
+
+inline static string truncIdFromName(string nameId) {
+    int splitIndex = nameId.find_last_of('_');
+    string result = nameId.substr(0, splitIndex);
+    cerr << "split: " << result << endl;
+    return result;
+}
 
 inline static void initTypeHash()
 {
@@ -113,7 +131,35 @@ inline static void initTypeSBT()
     TYPE_SBT.emplace_back(&block);
 }
 
-static bool findInSBT(int blockId, string name)
+static bool findPureNameInSBT(int blockId, string pureName)
+{
+    string nameId = getNameId(blockId, pureName);
+    // SBT不存在该块，报错
+    if (SBT.size() <= blockId)
+    {
+        cerr << "Block Undefined in SBT Error: " << blockId << endl;
+        assert(false);
+    }
+    // 在该块中寻找常量声明
+    int cnt = SBT[blockId]->count(nameId);
+    if (cnt)
+    {
+        cerr << "FOUND: " << nameId << endl;
+        foundNameId = nameId;
+        return true;
+    }
+    cerr << "Unfound nameId in SBT... " << nameId << endl;
+    // DFS: 在父块中寻找，根块没有父块
+    if (blockId)
+    {
+        cerr << "Finding pure name in parent block: " << blockId << " " << BLOCK_HASH.at(blockId)->parent->blockId << endl;
+        // 由于我们只有本块的id，因此要获取父块id先要得到本块的block
+        return findPureNameInSBT(BLOCK_HASH.at(blockId)->parent->blockId, pureName);
+    }
+    return false;
+}
+
+static bool findInSBT(int blockId, string name, bool findParent)
 {
     // SBT不存在该块，报错
     if (SBT.size() <= blockId)
@@ -126,16 +172,16 @@ static bool findInSBT(int blockId, string name)
 
     if (cnt)
     {
-        cerr << "FOUND: " << SBT[blockId]->at(name).const_val << endl;
+        cerr << "FOUND: " << name << endl;
         return true;
     }
-    cerr << "Unfound in SBT...\n";
+    cerr << "Unfound name in SBT... " << name << endl;
     // DFS: 在父块中寻找，根块没有父块
-    if (blockId)
+    if (findParent && blockId)
     {
         cerr << "Finding in parent block: " << blockId << " " << BLOCK_HASH.at(blockId)->parent->blockId << endl;
         // 由于我们只有本块的id，因此要获取父块id先要得到本块的block
-        return findInSBT(BLOCK_HASH.at(blockId)->parent->blockId, name);
+        return findInSBT(BLOCK_HASH.at(blockId)->parent->blockId, name, true);
     }
     return false;
 }
@@ -144,44 +190,45 @@ static void addConstToSBT(int blockId, string name, int initVal)
 {
     cerr << "Verifying Const... " << blockId << endl;
     // 判断该变量声明是否已经出现过
-    if (findInSBT(blockId, name))
+    if (findInSBT(blockId, name, false))
     {
         cerr << "Syntax Error: Const Redefined " << blockId << " " << name << " " << initVal << endl;
         assert(false);
     }
     cerr << "Verifying OK!\n";
-
+    // name = name
     SBTNode con;
     con.isConst = true;
     con.typeBlockId = 0; // 【后期增加类型时须修改】找到变量类型声明时所在的块id，目前只有int类型，所以blockId固定为0
     con.typeId = 0;      // 【后期增加类型时须修改】找到变量类型声明时所在的类id，目前只有int类型，所以typeId固定为0
     con.const_val = initVal;
     SBT[blockId]->insert(make_pair(name, con));
-    cerr << "AddOK!: " << SBT[blockId]->at(name).const_val << endl;
+    cerr << "AddOK!: " << name << " " << SBT[blockId]->at(name).const_val << endl;
 }
 
 static void addVarToSBT(int blockId, string name)
 {
     cerr << "Verifying Var... " << blockId << endl;
     // 判断该变量声明是否已经出现过
-    if (findInSBT(blockId, name))
+    if (findInSBT(blockId, name, false))
     {
         cerr << "Syntax Error: Var Redefined " << blockId << " " << name << endl;
         assert(false);
     }
     cerr << "Verifying OK!\n";
-
+    // name = name
     SBTNode con;
     con.isConst = false;
     con.typeBlockId = 0; // 【后期增加类型时须修改】找到变量类型声明时所在的块id，目前只有int类型，所以blockId固定为0
     con.typeId = 0;      // 【后期增加类型时须修改】找到变量类型声明时所在的类id，目前只有int类型，所以typeId固定为0
     con.const_val = 0;      // 默认初始化值设为0
     SBT[blockId]->insert(make_pair(name, con));
-    cerr << "AddOK!: " << SBT[blockId]->at(name).const_val << endl;
+    cerr << "AddOK!: " << name << endl;
 }
 
-static inline SBTNode& getNodeFromSBT(int blockId, string name)
+static inline SBTNode& getNodeFromSBT(int blockId, string pureName)
 {
+    string nameId = getNameId(blockId, pureName);
     // SBT不存在该块，报错
     if (SBT.size() <= blockId)
     {
@@ -189,21 +236,21 @@ static inline SBTNode& getNodeFromSBT(int blockId, string name)
         assert(false);
     }
     // 在该块中寻找常量声明时的值
-    cerr << "finding val...\n";
-    auto findResult = SBT[blockId]->find(name);
+    auto findResult = SBT[blockId]->find(nameId);
     auto notFound = SBT[blockId]->end();
     if (findResult != notFound)
     {
+        cerr << "found node: " << nameId << endl;
         return findResult->second;
     }
-    cerr << "not found! finding parent...\n";
+    cerr << "not found: " << nameId << ", finding parent...\n";
     // DFS: 在父块中寻找，根块没有父块
     if (blockId)
     {
         // 由于我们只有本块的id，因此要获取父块id先要得到本块的block
-        return getNodeFromSBT(BLOCK_HASH.at(blockId)->parent->blockId, name);
+        return getNodeFromSBT(BLOCK_HASH.at(blockId)->parent->blockId, pureName);
     }
-    cerr << "Syntax Error: Const or val Undefined! " << name << endl;
+    cerr << "Syntax Error: Const or val Undefined! " << nameId << endl;
     assert(false);
 }
 

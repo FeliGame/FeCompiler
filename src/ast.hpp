@@ -104,8 +104,11 @@ public:
     // exp代表的值是指针
     inline string loadIfisPointer()
     {
-        if(!isConst && findInSBT(blockId, ident)) {
+        cerr << "loading pointer... " << ident << endl;
+        // 在这次调用中将会改变foundNameId
+        if(!isConst && findPureNameInSBT(blockId, truncIdFromName(ident))) {
             alloc_ref();
+            ident = foundNameId;
             return get_ref() + " = load @" + ident + "\n";
         }
         return "";
@@ -267,6 +270,7 @@ public:
     {
         debug("const_def", const_init_val);
         string s;
+        ident = getNameId(blockId, ident);
         const_init_val->t_type = t_type; // 继承（父->子）
         const_init_val->blockId = blockId;
         s = const_init_val->Dump();
@@ -354,6 +358,7 @@ public:
     string Dump() override
     {
         debug("var_def", nullptr);
+        ident = getNameId(blockId, ident);
         addVarToSBT(blockId, ident);               // 添加变量声明
         string s = "@" + ident + " = alloc i32\n"; // 【暂时只支持int类型变量分配】
         if (selection == 1)
@@ -422,13 +427,17 @@ class BlockAST : public BaseAST
 {
 public:
     unique_ptr<BaseAST> block_items;
+    bool isNull;
 
     string Dump() override
     {
+        string s;
+        if(!isNull) {
         debug("block", block_items);
         blockId = alloc_block_id(blockId); // 传入参数为父块id，从这里转变成了该节点本身id
         block_items->blockId = blockId;
-        string s = block_items->Dump(); // 父->子
+        s = block_items->Dump(); // 父->子
+        }
         return s;
     }
 };
@@ -499,41 +508,51 @@ public:
     int selection;
     unique_ptr<BaseAST> l_val;
     unique_ptr<BaseAST> exp; // 表达式
+    unique_ptr<BaseAST> block;
 
     string Dump() override
     {
         debug("stmt", exp);
         string s;
+        string l_id;    // 左值的正确变量名
         switch (selection)
         {
         case 1:
             debug("stmt", l_val);
             l_val->blockId = exp->blockId = blockId; // 父->子
             s = l_val->Dump();
+            findPureNameInSBT(blockId, truncIdFromName(l_val->ident));
+            l_id = foundNameId;
             // 字面量/常量不能作为左值
             if (l_val->isConst)
             {
                 cerr << "Syntax Error: Const val isn't a left val!\n";
                 assert(false);
             }
-            // 变量
+            // 变量赋值语句
             else
             {
-                string l_id = l_val->ident; // 左值变量名，在syncProps中ident被更新为右值变量，因此要先缓存！
                 s += exp->Dump() + exp->loadIfisPointer();   // 计算右值的结果
-                s += ("store " + exp->get_val_if_possible() + ", @" + l_id  + "\n");
+                s += ("store " + exp->get_val_if_possible() + ", @" + l_id + "\n"); // 注意要赋值给左值变量标签
             }
             break;
-
         case 2:
+            exp->blockId = blockId; // 父->子
+            s = exp->Dump();
+            break;
+        case 3:
+            block->blockId = blockId; // 父->子
+            s = block->Dump();
+            break;
+        case 4:
             exp->blockId = blockId; // 父->子
             s = exp->Dump();
             // 返回的符号若为变量指针，则需要
             s += exp->loadIfisPointer();
             s += ("ret " + exp->get_val_if_possible() + "\n"); // 指令行
             break;
-        default:
-            assert(false);
+        default:    // 对应只有;的空语句或return ;
+            s = "";
         }
         return s;
     }
@@ -589,7 +608,9 @@ public:
     string Dump() override
     {
         debug("l_val", nullptr);
-        auto node = getNodeFromSBT(blockId, ident);
+        ident = getNameId(blockId, ident);
+        cerr << "lval id: "<< ident << endl;
+        auto node = getNodeFromSBT(blockId, truncIdFromName(ident));
         isConst = node.isConst; //  判断是否为常量，如果是，则可以在规约时合并常量
         if (isConst)
         {

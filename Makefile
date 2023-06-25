@@ -120,6 +120,12 @@ test4-koopa:
 test4-riscv:
 	autotest -riscv -s lv4 /root/compiler/FeCompiler
 
+test5-koopa:
+	autotest -koopa -s lv5 /root/compiler/FeCompiler
+
+test5-riscv:
+	autotest -riscv -s lv5 /root/compiler/FeCompiler
+
 clean:
 	-rm -rf $(BUILD_DIR)
 
