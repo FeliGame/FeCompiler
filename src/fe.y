@@ -62,12 +62,12 @@ using namespace std;
 
 // %token: <decl in %union, values>
 // lexer 返回的所有 终结符（即token） 类型的声明
-%token INT RETURN CONST
+%token INT RETURN CONST IF ELSE
 %token <str_val> IDENT RELOP EQOP LOGICAND LOGICOR
 %token <int_val> INT_VAL
 
 %type <ast_val> Decl ConstDecl BType ConstDefs ConstDef ConstInitVal VarDecl VarDefs VarDef InitVal BlockItems BlockItem LVal ConstExp
-  FuncDef FuncType Block Stmt Exp PrimaryExp UnaryExp AddExp MulExp RelExp EqExp LAndExp LOrExp
+  FuncDef FuncType Block Stmt MS UMS Exp PrimaryExp UnaryExp AddExp MulExp RelExp EqExp LAndExp LOrExp
 %type <int_val> Number
 %type <str_val> UnaryOp
 
@@ -261,43 +261,80 @@ BlockItem
   ;
 
 Stmt
-  : LVal '=' Exp ';' {
+  : MS {
     auto ast = new StmtAST();
+    ast->ms_ums = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | UMS {
+    auto ast = new StmtAST();
+    ast->ms_ums = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+MS  
+  : LVal '=' Exp ';' {
+    auto ast = new MSAST();
     ast->selection = 1;
     ast->l_val = unique_ptr<BaseAST>($1);
     ast->exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   | Exp ';' {
-    auto ast = new StmtAST();
+    auto ast = new MSAST();
     ast->selection = 2;
     ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   | ';' {
-    auto ast = new StmtAST();
+    auto ast = new MSAST();
     ast->selection = 0;
     $$ = ast;
   }
   | Block {
-    auto ast = new StmtAST();
+    auto ast = new MSAST();
     ast->selection = 3;
     ast->block = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
+  | IF '(' Exp ')' MS ELSE MS {
+    auto ast = new MSAST();
+    ast->selection = 4;
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->ms = unique_ptr<BaseAST>($5);
+    ast->else_ms = unique_ptr<BaseAST>($7);
+    $$ = ast;
+  }
   | RETURN ';' {
-    auto ast = new StmtAST();
+    auto ast = new MSAST();
     ast->selection = 0;
     $$ = ast;
   }
   | RETURN Exp ';' {
-    auto ast = new StmtAST();
-    ast->selection = 4;
+    auto ast = new MSAST();
+    ast->selection = 5;
     ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
+  } 
+  ;
+
+  UMS  
+  : IF '(' Exp ')' MS ELSE UMS {
+    auto ast = new UMSAST();
+    ast->selection = 1;
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->ms = unique_ptr<BaseAST>($5);
+    ast->ums = unique_ptr<BaseAST>($7);
+    $$ = ast;
   }
-  
-  
+  | IF '(' Exp ')' Stmt {
+    auto ast = new UMSAST();
+    ast->selection = 2;
+    ast->exp = unique_ptr<BaseAST>($3);
+    ast->stmt = unique_ptr<BaseAST>($5);
+    $$ = ast;
+  }
   ;
 
 Exp         

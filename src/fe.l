@@ -54,6 +54,8 @@ EqualOperator       (!=)|(==)
 
 "int"           { return INT; }
 "return"        { return RETURN; }
+"if"            { return IF;}
+"else"          { return ELSE;}
 
 {RelativeOperator} { yylval.str_val = new string(yytext); return RELOP; }
 {EqualOperator} { yylval.str_val = new string(yytext); return EQOP;}

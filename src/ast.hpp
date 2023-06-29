@@ -5,6 +5,7 @@
 #include <string>
 #include <iostream>
 #include <cassert>
+#include <vector>
 #include "sbt.hpp"
 
 using namespace std;
@@ -16,6 +17,32 @@ static bool global_t_id[1024];
 // 是否启用调试信息（cerr输出AST结构）
 static bool debugMode = true;
 
+static bool block_end = false;  // 基本块是否结束的标记
+static int basic_block_tag_id = 0;
+// 分配tag_cnt个全局基本块标签（用于分支、循环、跳转语句）
+static vector<string> alloc_basic_block_tags(int tag_cnt)
+{
+    stringstream ss;
+    vector<string> result;
+    while (tag_cnt--)
+    {
+        ss << (basic_block_tag_id++);
+        result.push_back(("%L" + ss.str()));
+        ss.str(""); // flush和clear方法不能清空流中内容
+    }
+    return result;
+}
+
+// 输出块末的IR，如果已经遇到了ret，就不用输出
+static string get_block_end_ir(const vector<string>& tags, int index) {
+    // 前面已经遇到ret语句了，因此没有必要再输出jump
+    if(block_end) {
+        block_end = false;  // ret语句已过
+        return "\n\n";
+    }
+    block_end = true;
+    return "jump " + tags[index] + "\n\n";
+}
 // 所有 AST 的基类
 class BaseAST
 {
@@ -36,7 +63,7 @@ public:
     // Dump translates the AST into Koopa IR string
     virtual string Dump() = 0;
 
-    // 同步子节点的t_id r_val t_type isConst信息
+    // 同步子节点的综合属性：t_id r_val t_type isConst isRet
     inline void syncProps(const unique_ptr<BaseAST> &child)
     {
         t_id = child->t_id;
@@ -93,7 +120,8 @@ public:
         // 常量直接返回
         if (isConst)
             return r_val;
-        if (t_id == -1) {
+        if (t_id == -1)
+        {
             cerr << "Unallocated pointer...\n";
             assert(false);
         }
@@ -106,7 +134,8 @@ public:
     {
         cerr << "loading pointer... " << ident << endl;
         // 在这次调用中将会改变foundNameId
-        if(!isConst && findPureNameInSBT(blockId, truncIdFromName(ident))) {
+        if (!isConst && findPureNameInSBT(blockId, truncIdFromName(ident)))
+        {
             alloc_ref();
             ident = foundNameId;
             return get_ref() + " = load @" + ident + "\n";
@@ -432,11 +461,12 @@ public:
     string Dump() override
     {
         string s;
-        if(!isNull) {
-        debug("block", block_items);
-        blockId = alloc_block_id(blockId); // 传入参数为父块id，从这里转变成了该节点本身id
-        block_items->blockId = blockId;
-        s = block_items->Dump(); // 父->子
+        if (!isNull)
+        {
+            debug("block", block_items);
+            blockId = alloc_block_id(blockId); // 传入参数为父块id，从这里转变成了该节点本身id
+            block_items->blockId = blockId;
+            s = block_items->Dump(); // 父->子
         }
         return s;
     }
@@ -506,19 +536,37 @@ class StmtAST : public BaseAST
 {
 public:
     int selection;
-    unique_ptr<BaseAST> l_val;
-    unique_ptr<BaseAST> exp; // 表达式
-    unique_ptr<BaseAST> block;
+    unique_ptr<BaseAST> ms_ums;
 
     string Dump() override
     {
-        debug("stmt", exp);
+        debug("stmt", nullptr);
+        ms_ums->blockId = blockId;
+        string s = ms_ums->Dump();
+        return s;
+    }
+};
+
+class MSAST : public BaseAST
+{
+public:
+    int selection;
+    unique_ptr<BaseAST> l_val;
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> block;
+    unique_ptr<BaseAST> lorExp;
+    unique_ptr<BaseAST> ms;
+    unique_ptr<BaseAST> else_ms;
+
+    string Dump() override
+    {
+        debug("ms", nullptr);
         string s;
-        string l_id;    // 左值的正确变量名
+        string l_id;         // 左值的正确变量名
+        vector<string> tags; // if-else语句需要的基本块标签
         switch (selection)
         {
         case 1:
-            debug("stmt", l_val);
             l_val->blockId = exp->blockId = blockId; // 父->子
             s = l_val->Dump();
             findPureNameInSBT(blockId, truncIdFromName(l_val->ident));
@@ -532,7 +580,7 @@ public:
             // 变量赋值语句
             else
             {
-                s += exp->Dump() + exp->loadIfisPointer();   // 计算右值的结果
+                s += exp->Dump() + exp->loadIfisPointer();                          // 计算右值的结果
                 s += ("store " + exp->get_val_if_possible() + ", @" + l_id + "\n"); // 注意要赋值给左值变量标签
             }
             break;
@@ -544,15 +592,98 @@ public:
             block->blockId = blockId; // 父->子
             s = block->Dump();
             break;
+        // IF '(' Exp ')' ms ELSE else_ms
         case 4:
+            exp->blockId = ms->blockId = else_ms->blockId = blockId;
+            s = exp->Dump(); // 判断条件
+            tags = alloc_basic_block_tags(3);
+            if (exp->t_id == -1 && !exp->isConst)
+            {
+                exp->alloc_ref();
+                s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
+            }
+            s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
+            block_end = false;  // 新块开始
+            s += (tags[0] + ":\n"); // exp 为真的基本块
+            s += (ms->Dump()  +get_block_end_ir(tags, 2)) ;
+            block_end = false;  // 新块开始
+            s += (tags[1] + ":\n"); // exp 为假的基本块
+            s += (else_ms->Dump()  +get_block_end_ir(tags, 2));
+            block_end = false;  // 新块开始
+            s += (tags[2] + ":\n"); // 退出分支语句的基本块
+            break;
+        case 5:
             exp->blockId = blockId; // 父->子
             s = exp->Dump();
             // 返回的符号若为变量指针，则需要
             s += exp->loadIfisPointer();
             s += ("ret " + exp->get_val_if_possible() + "\n"); // 指令行
+            block_end = true;
             break;
-        default:    // 对应只有;的空语句或return ;
+        default: // 对应只有;的空语句或return ;
             s = "";
+        }
+        return s;
+    }
+};
+
+class UMSAST : public BaseAST
+{
+public:
+    int selection;
+    unique_ptr<BaseAST> exp;
+    unique_ptr<BaseAST> stmt;
+    unique_ptr<BaseAST> ms;
+    unique_ptr<BaseAST> ums;
+
+    string Dump() override
+    {
+        debug("ms", nullptr);
+        string s;
+        string l_id;         // 左值的正确变量名
+        vector<string> tags; // if-else语句需要的基本块标签
+        switch (selection)
+        {
+        // IF '(' Exp ')' MS ELSE UMS
+        case 1:
+            exp->blockId = ms->blockId = ums->blockId = blockId;
+            s = exp->Dump(); // 判断条件
+            tags = alloc_basic_block_tags(3);
+            if (exp->t_id == -1 && !exp->isConst)
+            {
+                exp->alloc_ref();
+                s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
+            }
+            s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
+            block_end = false;  // 新块开始
+            s += (tags[0] + ":\n"); // exp 为真的基本块
+            s += (ms->Dump()  +get_block_end_ir(tags, 2));
+            block_end = false;  // 新块开始
+            s += (tags[1] + ":\n"); // exp 为假的基本块
+            s += (ums->Dump()  +get_block_end_ir(tags, 2));
+            block_end = false;  // 新块开始
+            s += (tags[2] + ":\n"); // 退出分支语句的基本块
+            break;
+        // IF '(' Exp ')' Stmt
+        case 2:
+            exp->blockId = stmt->blockId = blockId;
+            s = exp->Dump();
+            tags = alloc_basic_block_tags(2);
+            if (exp->t_id == -1 && !exp->isConst)
+            {
+                exp->alloc_ref();
+                s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
+            }
+            s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
+            block_end = false;  // 新块开始
+            s += (tags[0] + ":\n"); // exp 为真的基本块
+            s += (stmt->Dump()  +get_block_end_ir(tags, 1));
+            block_end = false;  // 新块开始
+            s += (tags[1] + ":\n"); // exp为假/退出分支语句的基本块
+            break;
+        default: 
+            cerr << "Parsing Error in: UMS\n";
+            assert(false);
         }
         return s;
     }
@@ -609,7 +740,7 @@ public:
     {
         debug("l_val", nullptr);
         ident = getNameId(blockId, ident);
-        cerr << "lval id: "<< ident << endl;
+        cerr << "lval id: " << ident << endl;
         auto node = getNodeFromSBT(blockId, truncIdFromName(ident));
         isConst = node.isConst; //  判断是否为常量，如果是，则可以在规约时合并常量
         if (isConst)
@@ -758,11 +889,11 @@ public:
             break;
         case 2:
             debug("mul", mulExp);
-            mulExp->blockId = unaryExp->blockId = blockId; // 父->子
-            s = mulExp->Dump() + mulExp->loadIfisPointer();                            // 先求出多元式（左结合）
-            s1 = unaryExp->Dump() + unaryExp->loadIfisPointer();                         // 然后求出一元式
-            isConst = mulExp->isConst & unaryExp->isConst; // 仅当两个右值的运算结果才是右值
-            t_type = mulExp->t_type;                       // 没有考虑类型转换和检查
+            mulExp->blockId = unaryExp->blockId = blockId;       // 父->子
+            s = mulExp->Dump() + mulExp->loadIfisPointer();      // 先求出多元式（左结合）
+            s1 = unaryExp->Dump() + unaryExp->loadIfisPointer(); // 然后求出一元式
+            isConst = mulExp->isConst & unaryExp->isConst;       // 仅当两个右值的运算结果才是右值
+            t_type = mulExp->t_type;                             // 没有考虑类型转换和检查
             if (!isConst)
             {
                 alloc_ref(); // 分配新临时变量

@@ -20,7 +20,7 @@ using namespace std;
 extern FILE *yyin;                            // in fe.tab.hpp generated
 extern int yyparse(unique_ptr<BaseAST> &ast); // in parser generated
 const char *outFilePath;
-bool debugAutotest = false; // 是否输出autotest下的内容到本层级文件夹
+bool debugAutotest = true; // 是否输出autotest下的内容到本层级文件夹
 
 // 调用 parser 函数, parser 函数会进一步调用 lexer 解析输入文件的
 unique_ptr<BaseAST> ast;
