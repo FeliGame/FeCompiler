@@ -13,11 +13,13 @@ using namespace std;
 
 // 全局临时变量使用记录
 static bool global_t_id[1024];
+// 跳过不可达代码段的字符串内记号（该记号之后的部分不会输出到IR）
+static const string SKIP_UNREACHABLE = "`";
 
 // 是否启用调试信息（cerr输出AST结构）
 static bool debugMode = true;
-
-static bool block_end = false;  // 基本块是否结束的标记
+static int branch_cnt = 0;  // 还有未跳转出去的块吗？（用于某些没有分支控制的ret语句）
+static bool block_end = false; // 基本块是否结束的标记
 static int basic_block_tag_id = 0;
 // 分配tag_cnt个全局基本块标签（用于分支、循环、跳转语句）
 static vector<string> alloc_basic_block_tags(int tag_cnt)
@@ -33,11 +35,13 @@ static vector<string> alloc_basic_block_tags(int tag_cnt)
     return result;
 }
 
-// 输出块末的IR，如果已经遇到了ret，就不用输出
-static string get_block_end_ir(const vector<string>& tags, int index) {
+// 输出块末的jump，如果已经遇到了ret，就不用输出
+static string get_block_end_ir(const vector<string> &tags, int index)
+{
     // 前面已经遇到ret语句了，因此没有必要再输出jump
-    if(block_end) {
-        block_end = false;  // ret语句已过
+    if (block_end)
+    {
+        block_end = false; // ret语句已过
         return "\n\n";
     }
     block_end = true;
@@ -185,7 +189,7 @@ public:
         depth = 0;
         debug("comp_unit", func_def);
         string s = func_def->Dump();
-        return s;
+        return s.substr(0, s.find_first_of(SKIP_UNREACHABLE));  // 不可达部分不需要输出
     }
 };
 
@@ -597,20 +601,22 @@ public:
             exp->blockId = ms->blockId = else_ms->blockId = blockId;
             s = exp->Dump(); // 判断条件
             tags = alloc_basic_block_tags(3);
+            ++branch_cnt;
             if (exp->t_id == -1 && !exp->isConst)
             {
                 exp->alloc_ref();
                 s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
             }
             s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
-            block_end = false;  // 新块开始
+            block_end = false;      // 新块开始
             s += (tags[0] + ":\n"); // exp 为真的基本块
-            s += (ms->Dump()  +get_block_end_ir(tags, 2)) ;
-            block_end = false;  // 新块开始
+            s += (ms->Dump() + get_block_end_ir(tags, 2));
+            block_end = false;      // 新块开始
             s += (tags[1] + ":\n"); // exp 为假的基本块
-            s += (else_ms->Dump()  +get_block_end_ir(tags, 2));
-            block_end = false;  // 新块开始
+            s += (else_ms->Dump() + get_block_end_ir(tags, 2));
+            block_end = false;      // 新块开始
             s += (tags[2] + ":\n"); // 退出分支语句的基本块
+            --branch_cnt;
             break;
         case 5:
             exp->blockId = blockId; // 父->子
@@ -619,6 +625,10 @@ public:
             s += exp->loadIfisPointer();
             s += ("ret " + exp->get_val_if_possible() + "\n"); // 指令行
             block_end = true;
+            // 如果ret不处于任何分支，那么此后不应该输出任何语句
+            if(!branch_cnt) {
+                s += ("}" + SKIP_UNREACHABLE);
+            }
             break;
         default: // 对应只有;的空语句或return ;
             s = "";
@@ -649,39 +659,43 @@ public:
             exp->blockId = ms->blockId = ums->blockId = blockId;
             s = exp->Dump(); // 判断条件
             tags = alloc_basic_block_tags(3);
+            ++branch_cnt;
             if (exp->t_id == -1 && !exp->isConst)
             {
                 exp->alloc_ref();
                 s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
             }
             s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
-            block_end = false;  // 新块开始
+            block_end = false;      // 新块开始
             s += (tags[0] + ":\n"); // exp 为真的基本块
-            s += (ms->Dump()  +get_block_end_ir(tags, 2));
-            block_end = false;  // 新块开始
+            s += (ms->Dump() + get_block_end_ir(tags, 2));
+            block_end = false;      // 新块开始
             s += (tags[1] + ":\n"); // exp 为假的基本块
-            s += (ums->Dump()  +get_block_end_ir(tags, 2));
-            block_end = false;  // 新块开始
+            s += (ums->Dump() + get_block_end_ir(tags, 2));
+            block_end = false;      // 新块开始
             s += (tags[2] + ":\n"); // 退出分支语句的基本块
+            --branch_cnt;
             break;
         // IF '(' Exp ')' Stmt
         case 2:
             exp->blockId = stmt->blockId = blockId;
             s = exp->Dump();
             tags = alloc_basic_block_tags(2);
+            ++branch_cnt;
             if (exp->t_id == -1 && !exp->isConst)
             {
                 exp->alloc_ref();
                 s += (exp->get_ref() + " = load @" + exp->ident + "\n"); // 对于exp为store指令的，由于没有返回值，要先加载到临时变量中
             }
             s += ("br " + exp->get_val_if_possible() + ", " + tags[0] + ", " + tags[1] + "\n\n");
-            block_end = false;  // 新块开始
+            block_end = false;      // 新块开始
             s += (tags[0] + ":\n"); // exp 为真的基本块
-            s += (stmt->Dump()  +get_block_end_ir(tags, 1));
-            block_end = false;  // 新块开始
+            s += (stmt->Dump() + get_block_end_ir(tags, 1));
+            block_end = false;      // 新块开始
             s += (tags[1] + ":\n"); // exp为假/退出分支语句的基本块
+            --branch_cnt;
             break;
-        default: 
+        default:
             cerr << "Parsing Error in: UMS\n";
             assert(false);
         }
